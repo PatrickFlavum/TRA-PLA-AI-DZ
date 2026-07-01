@@ -60,7 +60,6 @@ alter table arts add column if not exists responsible_person text;
 alter table arts add column if not exists cyber_criticality text check (cyber_criticality in ('Hoch', 'Mittel', 'Tief'));
 alter table arts add column if not exists cyber_criticality_reason text;
 alter table arts add column if not exists guidance_mode_reason text;
-alter table arts add column if not exists current_maturity_level_id uuid references maturity_levels(id);
 
 create index if not exists idx_arts_org on arts(org_id);
 create index if not exists idx_arts_edit_token on arts(edit_token);
@@ -129,6 +128,9 @@ create table if not exists ai_use_case_maturity_levels (
   maturity_level_id uuid not null references maturity_levels(id) on delete cascade,
   unique (use_case_id, maturity_level_id)
 );
+
+-- arts.current_maturity_level_id references maturity_levels (defined above)
+alter table arts add column if not exists current_maturity_level_id uuid references maturity_levels(id);
 
 create index if not exists idx_use_case_caps_use_case on ai_use_case_capabilities(use_case_id);
 create index if not exists idx_use_case_maturity_use_case on ai_use_case_maturity_levels(use_case_id);
