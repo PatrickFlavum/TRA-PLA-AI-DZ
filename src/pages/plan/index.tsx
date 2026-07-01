@@ -18,13 +18,15 @@ import {
   loadARTUseCases, addUseCaseToART, removeUseCaseFromART, upsertARTUseCaseStatus,
   loadARTUseCaseDates, upsertARTUseCaseDateRow, deleteARTUseCaseDateRows,
   loadMaturityLevels, loadAllUseCaseMaturityLinks,
+  loadARTUseCaseRatings, upsertARTUseCaseRating,
+  loadBusinessDivisions,
 } from '@/lib/supabase'
 import type {
   ART, Organization, PlanVersion, Team, TeamMember,
   EmployeeRole, BizDevOpsCapability, GuidanceMode,
   AIUseCase, AIUseCaseStatus, AIUseCaseCapability, AIUseCaseMaturityLevel,
   MaturityLevel, ARTUseCase, ARTUseCaseStatus, ARTUseCaseDateRow,
-  CyberCriticality,
+  CyberCriticality, ARTUseCaseRating, BusinessDivision,
 } from '@/types/database'
 
 export const getStaticProps: GetStaticProps = async () => ({ props: {} })
@@ -160,6 +162,8 @@ export default function PlanPage() {
   const [maturityLevels, setMaturityLevels] = useState<MaturityLevel[]>([])
   const [artUseCases, setArtUseCases] = useState<ARTUseCase[]>([])
   const [artUseCaseDates, setArtUseCaseDates] = useState<ARTUseCaseDateRow[]>([])
+  const [artUseCaseRatings, setArtUseCaseRatings] = useState<ARTUseCaseRating[]>([])
+  const [businessDivisions, setBusinessDivisions] = useState<BusinessDivision[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -180,6 +184,11 @@ export default function PlanPage() {
   const [cyberCriticality, setCyberCriticality] = useState<CyberCriticality | ''>('')
   const [cyberCriticalityReason, setCyberCriticalityReason] = useState('')
   const [currentMaturityLevelId, setCurrentMaturityLevelId] = useState<string | null>(null)
+  const [artName, setArtName] = useState('')
+  const [detailUseCaseId, setDetailUseCaseId] = useState<string | null>(null)
+  const [editingPotentiale, setEditingPotentiale] = useState(false)
+  const [ratingEdits, setRatingEdits] = useState<Record<string, { nutzen: number; skalierbarkeit: number; akzeptanz: number }>>({})
+  const [editPlannedApproach, setEditPlannedApproach] = useState('')
   const [budget2027, setBudget2027] = useState('')
   const [showCheckIn, setShowCheckIn] = useState(false)
   const [changeDesc, setChangeDesc] = useState('')
@@ -210,6 +219,7 @@ export default function PlanPage() {
       if (!a) { setError('Transformationsplan nicht gefunden.'); setLoading(false); return }
 
       setCanEdit(isEdit); setArt(a)
+      setArtName(a.name)
       setMissionStatement(a.mission_statement ?? '')
       setBusinessContext(a.business_context ?? '')
       setRisks(a.risks ?? '')
@@ -220,19 +230,22 @@ export default function PlanPage() {
       setCyberCriticality((a.cyber_criticality as CyberCriticality | '') ?? '')
       setCyberCriticalityReason(a.cyber_criticality_reason ?? '')
       setCurrentMaturityLevelId(a.current_maturity_level_id ?? null)
+      setEditPlannedApproach(a.planned_approach ?? '')
       setBudget2027(a.budget_2027 != null ? String(a.budget_2027) : '')
 
-      const [o, v, teams, r, c, gm, uc, ucLinks, ucMatLinks, ml, auc, aucDates] = await Promise.all([
+      const [o, v, teams, r, c, gm, uc, ucLinks, ucMatLinks, ml, auc, aucDates, ratings, divs] = await Promise.all([
         loadOrganization(a.org_id), loadPlanVersions(a.id), loadTeams(a.id),
         loadEmployeeRoles(), loadCapabilities(), loadGuidanceModes(),
         loadAIUseCases(), loadAllUseCaseCapabilityLinks(), loadAllUseCaseMaturityLinks(),
         loadMaturityLevels(), loadARTUseCases(a.id), loadARTUseCaseDates(a.id),
+        loadARTUseCaseRatings(a.id), loadBusinessDivisions(),
       ])
       setOrg(o); setVersions(v); setLatestVersion(v[0] ?? null)
       setRoles(r); setCapabilities(c); setGuidanceModes(gm)
       setUseCases(uc); setUseCaseCapLinks(ucLinks)
       setUseCaseMaturityLinks(ucMatLinks); setMaturityLevels(ml)
       setArtUseCases(auc); setArtUseCaseDates(aucDates)
+      setArtUseCaseRatings(ratings); setBusinessDivisions(divs)
 
       const teamIds = teams.map(t => t.id)
       const [allMembers, allAllocs] = await Promise.all([loadAllTeamMembers(teamIds), loadAllTeamAllocations(teamIds)])
@@ -255,6 +268,7 @@ export default function PlanPage() {
     setSaving(true)
     try {
       const updates = {
+        name: artName || art.name,
         mission_statement: missionStatement,
         business_context: businessContext,
         risks,
@@ -274,6 +288,7 @@ export default function PlanPage() {
   }
 
   const handleCancelIntro = () => {
+    setArtName(art?.name ?? '')
     setMissionStatement(art?.mission_statement ?? '')
     setBusinessContext(art?.business_context ?? '')
     setRisks(art?.risks ?? '')
@@ -285,6 +300,43 @@ export default function PlanPage() {
     setCyberCriticalityReason(art?.cyber_criticality_reason ?? '')
     setCurrentMaturityLevelId(art?.current_maturity_level_id ?? null)
     setEditingIntro(false)
+  }
+
+  const handleEnterPotentialeEdit = () => {
+    const init: Record<string, { nutzen: number; skalierbarkeit: number; akzeptanz: number }> = {}
+    useCases.forEach(uc => {
+      const r = artUseCaseRatings.find(x => x.use_case_id === uc.id)
+      init[uc.id] = { nutzen: r?.nutzen ?? 1, skalierbarkeit: r?.skalierbarkeit ?? 1, akzeptanz: r?.akzeptanz ?? 1 }
+    })
+    setRatingEdits(init)
+    setEditPlannedApproach(art?.planned_approach ?? '')
+    setEditingPotentiale(true)
+  }
+
+  const handleSavePotentiale = async () => {
+    if (!art) return
+    setSaving(true)
+    try {
+      await Promise.all(
+        Object.entries(ratingEdits).map(([use_case_id, vals]) =>
+          upsertARTUseCaseRating({ art_id: art.id, use_case_id, ...vals })
+        )
+      )
+      await updateART(art.id, { planned_approach: editPlannedApproach || null })
+      setArtUseCaseRatings(
+        Object.entries(ratingEdits).map(([use_case_id, vals]) => ({
+          id: '', art_id: art.id, use_case_id, ...vals, created_at: '',
+        }))
+      )
+      setArt({ ...art, planned_approach: editPlannedApproach || null })
+      setEditingPotentiale(false)
+    } catch { setError('Fehler beim Speichern.') }
+    finally { setSaving(false) }
+  }
+
+  const handleCancelPotentialeEdit = () => {
+    setEditingPotentiale(false)
+    setEditPlannedApproach(art?.planned_approach ?? '')
   }
 
   const handleSaveFinanzen = async () => {
@@ -409,6 +461,13 @@ export default function PlanPage() {
   const artTotals = sumTotals(artSummary)
   const selectedMode = guidanceModes.find(m => m.id === art?.guidance_mode_id)
   const selectedMaturityLevel = maturityLevels.find(m => m.id === art?.current_maturity_level_id)
+  const orgDivision = businessDivisions.find(d => d.id === org?.business_division_id)
+
+  const totalFTEAll = artTotals.totalFTE
+  const internPct = totalFTEAll > 0 ? Math.round((artTotals.internFTE / totalFTEAll) * 100) : null
+  const externPct = totalFTEAll > 0 ? Math.round((artTotals.externFTE / totalFTEAll) * 100) : null
+  const itPct = totalFTEAll > 0 ? Math.round((artTotals.itFTE / totalFTEAll) * 100) : null
+  const businessPct = totalFTEAll > 0 ? Math.round((artTotals.businessFTE / totalFTEAll) * 100) : null
 
   const artCapAllocation: Record<string, number> = {}
   if (teamsData.length > 0) {
@@ -531,6 +590,89 @@ export default function PlanPage() {
           </div>
         )}
 
+        {/* Use Case Detail Modal */}
+        {detailUseCaseId && (() => {
+          const uc = useCases.find(u => u.id === detailUseCaseId)
+          if (!uc) return null
+          const caps = useCaseCapLinks.filter(l => l.use_case_id === uc.id)
+          const matLinks = useCaseMaturityLinks.filter(l => l.use_case_id === uc.id)
+          const UC_STATUS_BADGE_MODAL: Partial<Record<AIUseCaseStatus, string>> = {
+            'In Backlog': 'bg-gray-100 text-gray-600',
+            'In Lösungsexploration': 'bg-blue-50 text-blue-700',
+            'In Entwicklung': 'bg-amber-50 text-amber-700',
+            'Im Rollout': 'bg-purple-50 text-purple-700',
+            'In Betrieb': 'bg-green-50 text-green-700',
+            'Abgebrochen': 'bg-red-50 text-red-600',
+          }
+          return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 no-print p-4"
+              onClick={e => { if (e.target === e.currentTarget) setDetailUseCaseId(null) }}>
+              <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
+                <div className="flex items-start justify-between mb-4">
+                  <h3 className="text-lg font-bold text-gray-900 pr-4">{uc.title}</h3>
+                  <button type="button" onClick={() => setDetailUseCaseId(null)}
+                    className="text-gray-400 hover:text-gray-600 text-xl leading-none shrink-0">×</button>
+                </div>
+                {uc.description && <p className="text-sm text-gray-700 mb-4">{uc.description}</p>}
+                <div className="space-y-3">
+                  {(uc.status || uc.available_from) && (
+                    <div className="flex items-center gap-3 flex-wrap">
+                      {uc.status && (
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${UC_STATUS_BADGE_MODAL[uc.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                          {uc.status}
+                        </span>
+                      )}
+                      {uc.available_from && (
+                        <span className="text-xs text-gray-500">Verfügbar ab: {fmtDate(uc.available_from)}</span>
+                      )}
+                    </div>
+                  )}
+                  {uc.link && (
+                    <a href={uc.link} target="_blank" rel="noopener noreferrer"
+                      className="inline-block text-sm text-brand-600 hover:text-brand-700">
+                      Weiterführende Informationen ↗
+                    </a>
+                  )}
+                  {caps.length > 0 && (
+                    <div>
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1.5">Capabilities</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {caps.map(link => {
+                          const cap = capabilities.find(c => c.id === link.capability_id)
+                          if (!cap) return null
+                          return (
+                            <span key={link.capability_id} className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-700">
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: cap.color ?? '#6366f1' }} />
+                              {cap.name}
+                              {link.efficiency_potential != null && <span className="ml-0.5 text-gray-400">{link.efficiency_potential}%</span>}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {matLinks.length > 0 && (
+                    <div>
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1.5">Maturitätsstufen</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {matLinks.map(l => {
+                          const ml = maturityLevels.find(m => m.id === l.maturity_level_id)
+                          if (!ml) return null
+                          return (
+                            <span key={l.maturity_level_id} className="inline-block px-2 py-0.5 text-xs font-bold rounded bg-brand-100 text-brand-700">
+                              {ml.code} – {ml.title}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )
+        })()}
+
         {error && (
           <div className="max-w-5xl mx-auto px-4 mt-4 no-print">
             <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg p-3">{error}
@@ -545,9 +687,11 @@ export default function PlanPage() {
 
             {/* ── Header Box ── */}
             <div className="bg-white rounded-xl border border-gray-200 p-6 mb-4">
-              <p className="text-sm text-gray-500 mb-2">{org?.name ?? ''}</p>
-              <h2 className="text-xl font-bold text-gray-900">Transformationsplan {art.name}</h2>
-              {art.description && <p className="text-sm text-gray-500 mt-1">{art.description}</p>}
+              <p className="text-sm text-gray-500 mb-1">
+                {org?.description ?? org?.name ?? ''}
+                {orgDivision && <><span className="mx-1.5 text-gray-300">•</span>{orgDivision.title}</>}
+              </p>
+              <h2 className="font-bold text-gray-900" style={{ fontSize: '1.625rem', lineHeight: '2rem' }}>{art.name}</h2>
 
               {art.mission_statement ? (
                 <div className="mt-4 pt-4 border-t border-gray-100">
@@ -562,25 +706,34 @@ export default function PlanPage() {
               )}
             </div>
 
-            {/* ── ART-Leitung & Verantwortliche Person ── */}
-            {(art.art_leadership || art.responsible_person) && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
-                {art.art_leadership && (
-                  <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">ART-Leitung</p>
-                    <p className="text-sm text-gray-900 whitespace-pre-wrap">{art.art_leadership}</p>
-                  </div>
-                )}
-                {art.responsible_person && (
-                  <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Verantwortliche Person</p>
-                    <p className="text-sm text-gray-900">{art.responsible_person}</p>
-                  </div>
-                )}
+            {/* ── ART-Leitung / Verantwortliche Person / AI-Maturität ── */}
+            {(art.art_leadership || art.responsible_person || selectedMaturityLevel) && (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                <div className="col-span-2 bg-white rounded-xl border border-gray-200 p-4">
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">ART-Leitung</p>
+                  {art.art_leadership
+                    ? <p className="text-sm text-gray-900 whitespace-pre-wrap">{art.art_leadership}</p>
+                    : <p className="text-xs text-gray-300">–</p>}
+                </div>
+                <div className="bg-white rounded-xl border border-gray-200 p-4">
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Lead / Ansprechperson für Plan</p>
+                  {art.responsible_person
+                    ? <p className="text-sm text-gray-900">{art.responsible_person}</p>
+                    : <p className="text-xs text-gray-300">–</p>}
+                </div>
+                <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Aktuelle AI-Maturität</p>
+                  {selectedMaturityLevel ? (
+                    <>
+                      <p className="text-xl font-bold text-gray-900">{selectedMaturityLevel.code}</p>
+                      <p className="text-xs text-gray-500 mt-0.5">{selectedMaturityLevel.title}</p>
+                    </>
+                  ) : <p className="text-2xl font-bold text-gray-300">–</p>}
+                </div>
               </div>
             )}
 
-            {/* ── 4 KPI Boxes ── */}
+            {/* ── 4 KPI Boxes row 1 ── */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
               <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
                 <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Teams</p>
@@ -592,28 +745,43 @@ export default function PlanPage() {
                 <p className="text-xs text-gray-500">{artTotals.totalHC} HC</p>
               </div>
               <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-                <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Aktuelle AI-Maturität</p>
-                {selectedMaturityLevel ? (
+                <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Anteil Intern vs. Extern</p>
+                {internPct !== null ? (
                   <>
-                    <p className="text-xl font-bold text-gray-900">{selectedMaturityLevel.code}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">{selectedMaturityLevel.title}</p>
+                    <p className="text-xl font-bold text-gray-900">{internPct}% <span className="text-sm font-normal text-gray-400">intern</span></p>
+                    <p className="text-xs text-gray-500">{externPct}% extern</p>
                   </>
-                ) : (
-                  <p className="text-2xl font-bold text-gray-300">–</p>
-                )}
+                ) : <p className="text-2xl font-bold text-gray-300">–</p>}
               </div>
-              <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Begleitungsmodus</p>
-                <p className="text-base font-bold text-gray-900">{selectedMode ? `${selectedMode.letter} – ${selectedMode.title}` : '–'}</p>
-                {art.guidance_mode_reason && (
-                  <p className="text-xs text-gray-500 mt-1">{art.guidance_mode_reason}</p>
-                )}
+              <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+                <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Anteil IT vs. Business</p>
+                {itPct !== null ? (
+                  <>
+                    <p className="text-xl font-bold text-gray-900">{itPct}% <span className="text-sm font-normal text-gray-400">IT</span></p>
+                    <p className="text-xs text-gray-500">{businessPct}% Business</p>
+                  </>
+                ) : <p className="text-2xl font-bold text-gray-300">–</p>}
               </div>
             </div>
+
+            {/* ── FTE-Aufteilung ── */}
+            {Object.keys(artCapAllocation).length > 0 && (
+              <div className="mb-4 bg-white rounded-xl border border-gray-200 p-5">
+                <h5 className="text-sm font-semibold text-gray-700 mb-2">Verteilung der Arbeitsleistung – gesamter ART</h5>
+                <StackedBar slices={capabilities
+                  .map(cap => ({ label: cap.name, value: artCapAllocation[cap.id] ?? 0, color: cap.color ?? '#6366f1' }))} />
+              </div>
+            )}
 
             {/* ── Business Context & Risiken ── */}
             {editingIntro ? (
               <div className="space-y-4">
+                <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Name des ART</h4>
+                  <input type="text" value={artName} onChange={e => setArtName(e.target.value)}
+                    placeholder="ART-Name"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                </div>
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
                   <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Mission Statement / Beschreibung ART</h4>
                   <RichTextEditor value={missionStatement} onChange={setMissionStatement} placeholder="Mission Statement / Beschreibung des ART…" />
@@ -627,7 +795,7 @@ export default function PlanPage() {
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
                   </div>
                   <div className="bg-white rounded-xl border border-gray-200 p-5">
-                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Verantwortliche Person für diesen Plan</h4>
+                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Lead / Ansprechperson für Plan</h4>
                     <p className="text-[10px] text-gray-400 mb-2">Üblicherweise RTE des ART oder STE der AO</p>
                     <input type="text" value={responsiblePerson} onChange={e => setResponsiblePerson(e.target.value)}
                       placeholder="z.B. Anna Muster"
@@ -735,6 +903,21 @@ export default function PlanPage() {
                     </div>
                   </div>
                 )}
+
+                {/* ── Begleitungsmodus ── */}
+                <div className="mt-3 bg-white rounded-xl border border-gray-200 p-4 flex gap-6">
+                  <div className="shrink-0">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Begleitungsmodus</p>
+                    <p className="text-base font-bold text-gray-900">{selectedMode ? `${selectedMode.letter} – ${selectedMode.title}` : '–'}</p>
+                  </div>
+                  {art.guidance_mode_reason && (
+                    <div className="flex-1 border-l border-gray-100 pl-6">
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Begründung</p>
+                      <p className="text-sm text-gray-700">{art.guidance_mode_reason}</p>
+                    </div>
+                  )}
+                </div>
+
                 {editable && (
                   <button type="button" onClick={() => setEditingIntro(true)}
                     className="mt-4 px-4 py-2 border border-gray-200 text-sm text-brand-600 hover:bg-brand-50 font-medium rounded-lg no-print">
@@ -743,20 +926,6 @@ export default function PlanPage() {
               </>
             )}
 
-            {/* ── Übersicht Mitarbeitende & FTE-Aufteilung ── */}
-            <div className="mt-4 space-y-4">
-              <div className="bg-white rounded-xl border border-gray-200 p-5">
-                <h5 className="text-sm font-semibold text-gray-700 mb-2">Übersicht Mitarbeitende</h5>
-                <SummaryTable rows={artSummary} totals={artTotals} />
-              </div>
-              {Object.keys(artCapAllocation).length > 0 && (
-                <div className="bg-white rounded-xl border border-gray-200 p-5">
-                  <h5 className="text-sm font-semibold text-gray-700 mb-2">FTE-Aufteilung nach BizDevOps Capabilities (ART-Gesamt)</h5>
-                  <StackedBar slices={capabilities
-                    .map(cap => ({ label: cap.name, value: artCapAllocation[cap.id] ?? 0, color: cap.color ?? '#6366f1' }))} />
-                </div>
-              )}
-            </div>
           </CollapsibleSection>
 
           {/* ══════ AKTUELLE TEAM-STRUKTUREN ══════════════════════════════ */}
@@ -789,10 +958,10 @@ export default function PlanPage() {
                               className="px-3 py-1.5 border border-gray-200 text-xs text-brand-600 hover:bg-brand-50 font-medium rounded-lg no-print">Bearbeiten</button>
                           )}
                         </div>
-                        <h5 className="text-sm font-semibold text-gray-700 mb-2">Team-Zusammenstellung</h5>
+                        <h5 className="text-sm font-semibold text-gray-700 mt-6 mb-2">Team-Zusammenstellung</h5>
                         <SummaryTable rows={teamSummary} totals={teamTotals} />
                         {hasAnyAllocation && (
-                          <div className="mt-4"><h5 className="text-sm font-semibold text-gray-700 mb-2">BizDevOps Kapazitätsverteilung</h5><StackedBar slices={allocSlices} /></div>
+                          <div className="mt-6"><h5 className="text-sm font-semibold text-gray-700 mb-2">BizDevOps Kapazitätsverteilung</h5><StackedBar slices={allocSlices} /></div>
                         )}
                         {(() => {
                           type UcRow = { ucTitle: string; capId: string; pilot_from: string | null; rollout_from: string | null; full_usage_from: string | null }
@@ -818,7 +987,7 @@ export default function PlanPage() {
                           })
                           if (sorted.length === 0) return null
                           return (
-                            <div className="mt-4">
+                            <div className="mt-6">
                               <h5 className="text-sm font-semibold text-gray-700 mb-2">Geplante AI Use Cases</h5>
                               <div className="overflow-x-auto">
                                 <table className="w-full text-xs">
@@ -886,153 +1055,189 @@ export default function PlanPage() {
             </div>
           </CollapsibleSection>
 
+          {/* ══════ MITARBEITENDE ════════════════════════════════════════ */}
+          <CollapsibleSection title="Mitarbeitende" subtitle="Übersicht aller Mitarbeitenden im ART">
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <SummaryTable rows={artSummary} totals={artTotals} />
+            </div>
+          </CollapsibleSection>
+
           {/* ══════ USE CASE POTENTIALE ═══════════════════════════════════ */}
-          <CollapsibleSection title="Use Case Potentiale" subtitle="Rangliste aller Use Cases nach geschätztem FTE-Potential">
+          <CollapsibleSection title="Use Case Potentiale" subtitle="Rangliste aller Use Cases nach Prio-Score">
             {(() => {
               type UcRankRow = {
                 uc: AIUseCase
-                capLinks: AIUseCaseCapability[]
-                maturityCodes: string[]
-                anzahlTeams: number
-                anzahlHC: number
-                anzahlFTE: number
-                potentialFTE: number
-                isRelevant: boolean
+                anzahlTeams: number; anzahlHC: number
+                nutzen: number; skalierbarkeit: number; akzeptanz: number; prioScore: number
+                hasRating: boolean
               }
               const rows: UcRankRow[] = useCases.map(uc => {
-                const caps = useCaseCapLinks.filter(l => l.use_case_id === uc.id)
-                const matCodes = useCaseMaturityLinks
-                  .filter(l => l.use_case_id === uc.id)
-                  .map(l => maturityLevels.find(m => m.id === l.maturity_level_id)?.code ?? '')
-                  .filter(Boolean)
-                  .sort()
-
-                // Potential: sum over all teams × all capabilities
-                let potentialFTE = 0
-                teamsData.forEach(td => {
-                  const teamFTE = td.members.reduce((s, m) => s + m.fte, 0)
-                  caps.forEach(link => {
-                    if (!link.efficiency_potential) return
-                    const capFTE = teamFTE * (td.allocations[link.capability_id] ?? 0) / 100
-                    potentialFTE += capFTE * link.efficiency_potential / 100
-                  })
+                const notNeededTeamIds = artUseCases.filter(u => u.use_case_id === uc.id && u.status === 'not_needed').map(u => u.team_id)
+                const ucCapIds = useCaseCapLinks.filter(l => l.use_case_id === uc.id).map(l => l.capability_id)
+                const eligibleTeams = teamsData.filter(td => {
+                  if (notNeededTeamIds.includes(td.team.id)) return false
+                  if (ucCapIds.length === 0) return true
+                  return ucCapIds.some(capId => (td.allocations[capId] ?? 0) > 0)
                 })
-
-                // Planned teams for this use case
-                const plannedTeamIds = artUseCases
-                  .filter(u => u.use_case_id === uc.id && u.status === 'planned')
-                  .map(u => u.team_id)
-                const plannedTeams = teamsData.filter(td => plannedTeamIds.includes(td.team.id))
-                const anzahlHC = plannedTeams.reduce((s, td) => s + td.members.reduce((ms, m) => ms + m.headcount, 0), 0)
-                const anzahlFTE = plannedTeams.reduce((s, td) => s + td.members.reduce((ms, m) => ms + m.fte, 0), 0)
-
+                const anzahlHC = eligibleTeams.reduce((s, td) => s + td.members.reduce((ms, m) => ms + m.headcount, 0), 0)
+                const rating = artUseCaseRatings.find(r => r.use_case_id === uc.id)
+                const nutzen = rating?.nutzen ?? 1
+                const skalierbarkeit = rating?.skalierbarkeit ?? 1
+                const akzeptanz = rating?.akzeptanz ?? 1
                 return {
-                  uc, capLinks: caps, maturityCodes: matCodes,
-                  anzahlTeams: plannedTeamIds.length,
-                  anzahlHC, anzahlFTE,
-                  potentialFTE,
-                  isRelevant: potentialFTE > 0,
+                  uc, anzahlTeams: eligibleTeams.length, anzahlHC,
+                  nutzen, skalierbarkeit, akzeptanz, prioScore: nutzen * skalierbarkeit * akzeptanz,
+                  hasRating: !!rating,
                 }
               })
 
-              const sorted = [...rows].sort((a, b) => {
-                if (b.potentialFTE !== a.potentialFTE) return b.potentialFTE - a.potentialFTE
-                return a.uc.title.localeCompare(b.uc.title, 'de')
-              })
+              const viewSorted = [...rows].sort((a, b) => b.prioScore !== a.prioScore ? b.prioScore - a.prioScore : a.uc.title.localeCompare(b.uc.title, 'de'))
+              const editSorted = editingPotentiale
+                ? [...rows].sort((a, b) => {
+                    const na = ratingEdits[a.uc.id] ?? a; const nb = ratingEdits[b.uc.id] ?? b
+                    const sa = na.nutzen * na.skalierbarkeit * na.akzeptanz
+                    const sb = nb.nutzen * nb.skalierbarkeit * nb.akzeptanz
+                    return sb !== sa ? sb - sa : a.uc.title.localeCompare(b.uc.title, 'de')
+                  })
+                : viewSorted
 
-              if (sorted.length === 0) return (
+              if (viewSorted.length === 0) return (
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
                   <p className="text-gray-400 text-sm">Noch keine AI Use Cases im System vorhanden.</p>
                 </div>
               )
 
               const UC_STATUS_BADGE: Partial<Record<AIUseCaseStatus, string>> = {
-                'Backlog': 'bg-gray-100 text-gray-600',
-                'Lösungsexploration': 'bg-blue-50 text-blue-700',
-                'Entwicklung': 'bg-amber-50 text-amber-700',
-                'Rollout': 'bg-purple-50 text-purple-700',
-                'In Betrieb': 'bg-green-50 text-green-700',
-                'Abgebrochen': 'bg-red-50 text-red-600',
+                'In Backlog': 'bg-gray-100 text-gray-600', 'In Lösungsexploration': 'bg-blue-50 text-blue-700',
+                'In Entwicklung': 'bg-amber-50 text-amber-700', 'Im Rollout': 'bg-purple-50 text-purple-700',
+                'In Betrieb': 'bg-green-50 text-green-700', 'Abgebrochen': 'bg-red-50 text-red-600',
               }
+
+              const displayRows = editingPotentiale ? editSorted : viewSorted
 
               return (
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <div className="flex items-center justify-between mb-3 no-print">
+                    <p className="text-[10px] text-gray-400">Prio-Score = Nutzen × Skalierbarkeit × Akzeptanz (je 1–5)</p>
+                    {editable && !editingPotentiale && (
+                      <button type="button" onClick={handleEnterPotentialeEdit}
+                        className="px-3 py-1.5 border border-gray-200 text-xs text-brand-600 hover:bg-brand-50 font-medium rounded-lg">
+                        Bearbeiten
+                      </button>
+                    )}
+                  </div>
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="text-left text-[10px] text-gray-400 border-b border-gray-200">
                           <th className="pb-2 font-medium pr-2">#</th>
                           <th className="pb-2 font-medium pr-3">Use Case</th>
-                          <th className="pb-2 font-medium pr-3">Capabilities</th>
-                          <th className="pb-2 font-medium pr-3">Maturität</th>
                           <th className="pb-2 font-medium pr-3">Status</th>
                           <th className="pb-2 font-medium pr-3">Verfügbar ab</th>
-                          <th className="pb-2 font-medium text-center pr-2">Teams</th>
-                          <th className="pb-2 font-medium text-center pr-2">HC / FTE</th>
-                          <th className="pb-2 font-medium text-center bg-brand-50 text-brand-700 rounded-t px-2">Potential (FTE)</th>
+                          <th className="pb-2 font-medium text-center pr-2">Max. einsetzbar in Teams</th>
+                          <th className="pb-2 font-medium text-center pr-2">Max. betroffene MA</th>
+                          <th className="pb-2 font-medium text-center pr-1 bg-sky-50 text-sky-600 rounded-tl">Eigenbewertung Nutzen</th>
+                          <th className="pb-2 font-medium text-center pr-1 bg-sky-50 text-sky-600">Eigenbewertung Skalierb.</th>
+                          <th className="pb-2 font-medium text-center pr-2 bg-sky-50 text-sky-600">Eigenbewertung Akzept.</th>
+                          <th className="pb-2 font-medium text-center bg-brand-50 text-brand-700 rounded-t px-2">Prio-Score</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {sorted.map((row, i) => {
-                          const gray = !row.isRelevant ? 'text-gray-300' : 'text-gray-800'
-                          const subGray = !row.isRelevant ? 'text-gray-300' : 'text-gray-500'
+                        {displayRows.map((row, i) => {
+                          if (editingPotentiale) {
+                            const e = ratingEdits[row.uc.id] ?? { nutzen: row.nutzen, skalierbarkeit: row.skalierbarkeit, akzeptanz: row.akzeptanz }
+                            const liveScore = e.nutzen * e.skalierbarkeit * e.akzeptanz
+                            const setField = (field: 'nutzen' | 'skalierbarkeit' | 'akzeptanz', val: number) =>
+                              setRatingEdits(prev => ({ ...prev, [row.uc.id]: { ...(prev[row.uc.id] ?? e), [field]: val } }))
+                            return (
+                              <tr key={row.uc.id} className="border-b border-gray-50">
+                                <td className="py-1.5 pr-2 tabular-nums text-gray-500">{i + 1}</td>
+                                <td className="py-1.5 pr-3 font-medium text-gray-800">{row.uc.title}</td>
+                                <td className="py-1.5 pr-3">
+                                  {row.uc.status
+                                    ? <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${UC_STATUS_BADGE[row.uc.status] ?? 'bg-gray-100 text-gray-600'}`}>{row.uc.status}</span>
+                                    : <span className="text-gray-400">–</span>}
+                                </td>
+                                <td className="py-1.5 pr-3 tabular-nums text-gray-500">{row.uc.available_from ? fmtDate(row.uc.available_from) : '–'}</td>
+                                <td className="py-1.5 pr-2 text-center tabular-nums text-gray-800">{row.anzahlTeams}</td>
+                                <td className="py-1.5 pr-2 text-center tabular-nums text-gray-500">{row.anzahlHC > 0 ? row.anzahlHC : '–'}</td>
+                                <td className="py-1 pr-1 bg-sky-50">
+                                  <select aria-label="Nutzen" value={e.nutzen} onChange={ev => setField('nutzen', Number(ev.target.value))}
+                                    className="w-14 px-1 py-0.5 border border-sky-200 rounded text-xs bg-white text-center focus:outline-none focus:ring-1 focus:ring-sky-400">
+                                    {[1,2,3,4,5].map(v => <option key={v} value={v}>{v}</option>)}
+                                  </select>
+                                </td>
+                                <td className="py-1 pr-1 bg-sky-50">
+                                  <select aria-label="Skalierbarkeit" value={e.skalierbarkeit} onChange={ev => setField('skalierbarkeit', Number(ev.target.value))}
+                                    className="w-14 px-1 py-0.5 border border-sky-200 rounded text-xs bg-white text-center focus:outline-none focus:ring-1 focus:ring-sky-400">
+                                    {[1,2,3,4,5].map(v => <option key={v} value={v}>{v}</option>)}
+                                  </select>
+                                </td>
+                                <td className="py-1 pr-2 bg-sky-50">
+                                  <select aria-label="Akzeptanz" value={e.akzeptanz} onChange={ev => setField('akzeptanz', Number(ev.target.value))}
+                                    className="w-14 px-1 py-0.5 border border-sky-200 rounded text-xs bg-white text-center focus:outline-none focus:ring-1 focus:ring-sky-400">
+                                    {[1,2,3,4,5].map(v => <option key={v} value={v}>{v}</option>)}
+                                  </select>
+                                </td>
+                                <td className="py-1.5 text-center tabular-nums font-semibold px-2 bg-brand-50 text-brand-700">{liveScore}</td>
+                              </tr>
+                            )
+                          }
                           return (
-                            <tr key={row.uc.id} className={`border-b border-gray-50 ${!row.isRelevant ? 'opacity-50' : ''}`}>
-                              <td className={`py-2 pr-2 font-medium tabular-nums ${gray}`}>{i + 1}</td>
-                              <td className={`py-2 pr-3 font-medium ${gray}`}>
-                                {row.uc.title}
-                                {row.uc.description && <p className={`font-normal mt-0.5 ${subGray}`}>{row.uc.description}</p>}
+                            <tr key={row.uc.id} className="border-b border-gray-50">
+                              <td className="py-2 pr-2 font-medium tabular-nums text-gray-800">{i + 1}</td>
+                              <td className="py-2 pr-3">
+                                <button type="button" onClick={() => setDetailUseCaseId(row.uc.id)}
+                                  className="font-medium text-brand-600 hover:text-brand-700 hover:underline text-left">
+                                  {row.uc.title}
+                                </button>
                               </td>
                               <td className="py-2 pr-3">
-                                <div className="flex flex-wrap gap-1">
-                                  {row.capLinks.map(link => {
-                                    const cap = capabilities.find(c => c.id === link.capability_id)
-                                    if (!cap) return null
-                                    return (
-                                      <span key={link.capability_id} className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full ${row.isRelevant ? 'bg-gray-100 text-gray-600' : 'bg-gray-50 text-gray-300'}`}>
-                                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: row.isRelevant ? (cap.color ?? '#6366f1') : '#d1d5db' }} />
-                                        {cap.name}
-                                        {link.efficiency_potential != null && <span className="ml-0.5 text-gray-400">{link.efficiency_potential}%</span>}
-                                      </span>
-                                    )
-                                  })}
-                                  {row.capLinks.length === 0 && <span className={subGray}>–</span>}
-                                </div>
+                                {row.uc.status
+                                  ? <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${UC_STATUS_BADGE[row.uc.status] ?? 'bg-gray-100 text-gray-600'}`}>{row.uc.status}</span>
+                                  : <span className="text-gray-400">–</span>}
                               </td>
-                              <td className="py-2 pr-3">
-                                <div className="flex flex-wrap gap-1">
-                                  {row.maturityCodes.map(code => (
-                                    <span key={code} className={`inline-block px-1.5 py-0.5 text-[10px] font-bold rounded ${row.isRelevant ? 'bg-brand-100 text-brand-700' : 'bg-gray-50 text-gray-300'}`}>{code}</span>
-                                  ))}
-                                  {row.maturityCodes.length === 0 && <span className={subGray}>–</span>}
-                                </div>
-                              </td>
-                              <td className="py-2 pr-3">
-                                {row.uc.status ? (
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${row.isRelevant ? (UC_STATUS_BADGE[row.uc.status] ?? 'bg-gray-100 text-gray-600') : 'bg-gray-50 text-gray-300'}`}>
-                                    {row.uc.status}
-                                  </span>
-                                ) : <span className={subGray}>–</span>}
-                              </td>
-                              <td className={`py-2 pr-3 tabular-nums ${subGray}`}>
-                                {row.uc.available_from ? fmtDate(row.uc.available_from) : '–'}
-                              </td>
-                              <td className={`py-2 pr-2 text-center tabular-nums ${gray}`}>{row.anzahlTeams}</td>
-                              <td className={`py-2 pr-2 text-center tabular-nums ${subGray}`}>
-                                {row.isRelevant && row.anzahlTeams > 0 ? `${row.anzahlHC} / ${fmtFTE(row.anzahlFTE)}` : '–'}
-                              </td>
-                              <td className={`py-2 text-center tabular-nums font-semibold px-2 ${row.isRelevant ? 'bg-brand-50 text-brand-700' : 'bg-gray-50 text-gray-300'}`}>
-                                {row.potentialFTE > 0 ? fmtFTE(row.potentialFTE) : '0.0'}
-                              </td>
+                              <td className="py-2 pr-3 tabular-nums text-gray-500">{row.uc.available_from ? fmtDate(row.uc.available_from) : '–'}</td>
+                              <td className="py-2 pr-2 text-center tabular-nums text-gray-800">{row.anzahlTeams}</td>
+                              <td className="py-2 pr-2 text-center tabular-nums text-gray-500">{row.anzahlHC > 0 ? row.anzahlHC : '–'}</td>
+                              <td className={`py-2 pr-1 text-center tabular-nums font-medium bg-sky-50 ${row.hasRating ? 'text-sky-700' : 'text-gray-300'}`}>{row.nutzen}</td>
+                              <td className={`py-2 pr-1 text-center tabular-nums font-medium bg-sky-50 ${row.hasRating ? 'text-sky-700' : 'text-gray-300'}`}>{row.skalierbarkeit}</td>
+                              <td className={`py-2 pr-2 text-center tabular-nums font-medium bg-sky-50 ${row.hasRating ? 'text-sky-700' : 'text-gray-300'}`}>{row.akzeptanz}</td>
+                              <td className={`py-2 text-center tabular-nums font-semibold px-2 ${row.hasRating ? 'bg-brand-50 text-brand-700' : 'bg-gray-50 text-gray-300'}`}>{row.prioScore}</td>
                             </tr>
                           )
                         })}
                       </tbody>
                     </table>
                   </div>
-                  <p className="text-[10px] text-gray-400 mt-3">
-                    Potential = FTE je Capability × Allokation je Team × Effizienzpotential. Ausgegraut = keine passende Capability-Allokation oder kein Effizienzpotential erfasst.
-                  </p>
+
+                  {/* ── Geplantes Vorgehen ── */}
+                  <div className="mt-6 pt-4 border-t border-gray-100">
+                    <h5 className="text-sm font-semibold text-gray-700 mb-1">Geplantes Vorgehen</h5>
+                    {editingPotentiale ? (
+                      <>
+                        <p className="text-[10px] text-gray-400 mb-2">Wie ist das grundlegende Vorgehen geplant – Use Case mit der höchsten Prio zuerst, oder gleich mehrere Use Cases gleichzeitig angehen? Welche werden konkret angegangen, welche (noch) nicht?</p>
+                        <textarea value={editPlannedApproach} onChange={e => setEditPlannedApproach(e.target.value)} rows={5}
+                          placeholder="Beschreibung des geplanten Vorgehens…"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                      </>
+                    ) : art.planned_approach ? (
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{art.planned_approach}</p>
+                    ) : (
+                      <p className="text-xs text-gray-400 italic">Noch nicht beschrieben.</p>
+                    )}
+                  </div>
+
+                  {editingPotentiale && (
+                    <div className="flex gap-2 mt-4 no-print">
+                      <button type="button" onClick={handleSavePotentiale} disabled={saving}
+                        className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg">
+                        {saving ? 'Speichern…' : 'Speichern'}
+                      </button>
+                      <button type="button" onClick={handleCancelPotentialeEdit}
+                        className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Abbrechen</button>
+                    </div>
+                  )}
                 </div>
               )
             })()}
@@ -1110,6 +1315,223 @@ export default function PlanPage() {
                   + AI Use Case hinzufügen</button>
               ))}
             </div>
+          </CollapsibleSection>
+
+          {/* ══════ ROADMAP ═══════════════════════════════════════════════ */}
+          <CollapsibleSection title="Roadmap" subtitle="Zeitliche Planung der Erprobung und Einführung pro Use Case">
+            {(() => {
+              const sqEnd = (d: Date) => new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3 + 3, 0)
+
+              type RmDates = { pilotFrom: Date | null; rolloutFrom: Date | null; fullUsageFrom: Date | null }
+              type RmCapRow = { capId: string; capName: string } & RmDates
+              type RmTeamEntry = {
+                teamId: string; teamName: string
+                showSingle: boolean; singleDates: RmDates; capRows: RmCapRow[]
+              }
+              type RmGroup = { ucId: string; rank: number; teams: RmTeamEntry[] }
+
+              const pd = (s: string | null) => s ? new Date(s) : null
+
+              const sortedUcIds = useCases
+                .filter(uc => artUseCases.some(u => u.use_case_id === uc.id && u.status === 'planned'))
+                .map(uc => {
+                  const r = artUseCaseRatings.find(x => x.use_case_id === uc.id)
+                  return { uc, score: (r?.nutzen ?? 1) * (r?.skalierbarkeit ?? 1) * (r?.akzeptanz ?? 1) }
+                })
+                .sort((a, b) => b.score - a.score || a.uc.title.localeCompare(b.uc.title, 'de'))
+                .map(x => x.uc.id)
+
+              const groups: RmGroup[] = []
+              sortedUcIds.forEach((ucId, rank) => {
+                const plannedTeamIds = artUseCases.filter(u => u.use_case_id === ucId && u.status === 'planned').map(u => u.team_id)
+                const teamEntries: RmTeamEntry[] = []
+                for (const teamId of plannedTeamIds) {
+                  const td = teamsData.find(t => t.team.id === teamId)
+                  if (!td) continue
+                  const dateRows = artUseCaseDates.filter(d => d.use_case_id === ucId && d.team_id === teamId)
+                  const capRows: RmCapRow[] = dateRows
+                    .filter(d => d.pilot_from || d.rollout_from || d.full_usage_from)
+                    .map(d => ({
+                      capId: d.capability_id,
+                      capName: capabilities.find(c => c.id === d.capability_id)?.name ?? '–',
+                      pilotFrom: pd(d.pilot_from), rolloutFrom: pd(d.rollout_from), fullUsageFrom: pd(d.full_usage_from),
+                    }))
+                  if (capRows.length === 0) continue
+                  const allSame = capRows.length === 1 || capRows.every(r =>
+                    r.pilotFrom?.toISOString() === capRows[0].pilotFrom?.toISOString() &&
+                    r.rolloutFrom?.toISOString() === capRows[0].rolloutFrom?.toISOString() &&
+                    r.fullUsageFrom?.toISOString() === capRows[0].fullUsageFrom?.toISOString()
+                  )
+                  teamEntries.push({
+                    teamId, teamName: td.team.name, showSingle: allSame,
+                    singleDates: { pilotFrom: capRows[0].pilotFrom, rolloutFrom: capRows[0].rolloutFrom, fullUsageFrom: capRows[0].fullUsageFrom },
+                    capRows: allSame ? [] : capRows,
+                  })
+                }
+                if (teamEntries.length > 0) groups.push({ ucId, rank: rank + 1, teams: teamEntries })
+              })
+
+              // Fixed range: Q1 2026 – Q4 2028
+              const rangeStart = new Date(2026, 0, 1)
+              const rangeEnd   = new Date(2028, 11, 31)
+              const totalMs    = rangeEnd.getTime() - rangeStart.getTime()
+              const toPct = (d: Date | null): number | null => {
+                if (!d) return null
+                return Math.max(0, Math.min(100, ((d.getTime() - rangeStart.getTime()) / totalMs) * 100))
+              }
+
+              const quarters: Array<{ label: string; pct: number; width: number }> = []
+              let cur = new Date(rangeStart)
+              while (cur <= rangeEnd) {
+                const qEnd = sqEnd(new Date(cur))
+                const pct = ((cur.getTime() - rangeStart.getTime()) / totalMs) * 100
+                const endMs = Math.min(qEnd.getTime(), rangeEnd.getTime())
+                quarters.push({
+                  label: `Q${Math.floor(cur.getMonth() / 3) + 1} ${cur.getFullYear()}`,
+                  pct, width: ((endMs - cur.getTime()) / totalMs) * 100,
+                })
+                cur = new Date(qEnd.getFullYear(), qEnd.getMonth() + 1, 1)
+              }
+
+              // ART maturity milestones: per planned UC → lowest maturity level → earliest rollout date
+              const lMap = new Map(maturityLevels.map(l => [l.id, l]))
+              const levelFirstDate = new Map<string, { code: string; title: string; date: Date }>()
+              for (const ucId of sortedUcIds) {
+                const ucRollDates = artUseCaseDates.filter(d => d.use_case_id === ucId && d.rollout_from)
+                if (ucRollDates.length === 0) continue
+                const earliest = new Date(Math.min(...ucRollDates.map(d => new Date(d.rollout_from!).getTime())))
+                const levels = useCaseMaturityLinks
+                  .filter(l => l.use_case_id === ucId)
+                  .map(l => lMap.get(l.maturity_level_id))
+                  .filter((l): l is MaturityLevel => !!l)
+                  .sort((a, b) => a.code.localeCompare(b.code))
+                if (levels.length === 0) continue
+                const lowest = levels[0]
+                const ex = levelFirstDate.get(lowest.code)
+                if (!ex || earliest < ex.date) levelFirstDate.set(lowest.code, { code: lowest.code, title: lowest.title, date: earliest })
+              }
+              const matMilestones = [...levelFirstDate.values()].sort((a, b) => a.date.getTime() - b.date.getTime())
+              // Prepend the ART's current maturity level as baseline before the first use-case milestone
+              const currentArtLevel = art.current_maturity_level_id ? lMap.get(art.current_maturity_level_id) : null
+              if (currentArtLevel) {
+                matMilestones.unshift({ code: currentArtLevel.code, title: currentArtLevel.title, date: rangeStart })
+              }
+              const allMatCodes = [...new Set(maturityLevels.map(l => l.code))].sort()
+              const matBg = ['bg-violet-200', 'bg-violet-300', 'bg-violet-400', 'bg-violet-500', 'bg-violet-600', 'bg-violet-700']
+              const matTx = ['text-violet-900', 'text-violet-900', 'text-violet-900', 'text-white', 'text-white', 'text-white']
+
+              const GanttBar = ({ dates }: { dates: RmDates }) => {
+                const erpStart  = toPct(dates.pilotFrom)
+                const erpEnd    = toPct(dates.rolloutFrom) ?? toPct(dates.fullUsageFrom)
+                const einfStart = toPct(dates.rolloutFrom)
+                const einfEnd   = toPct(dates.fullUsageFrom)
+                const vollStart = toPct(dates.fullUsageFrom)
+                return (
+                  <div className="flex-1 relative h-5 bg-gray-50 rounded">
+                    {quarters.slice(1).map((q, i) => (
+                      <div key={i} className="absolute top-0 bottom-0 border-l border-gray-200" style={{ left: `${q.pct}%` }} />
+                    ))}
+                    {erpStart !== null && (
+                      <div className="absolute top-0.5 bottom-0.5 bg-sky-300 rounded-sm" style={{
+                        left: `${erpStart}%`,
+                        width: erpEnd !== null && erpEnd > erpStart ? `${erpEnd - erpStart}%` : '1.5%',
+                      }} />
+                    )}
+                    {einfStart !== null && einfEnd !== null && einfEnd > einfStart && (
+                      <div className="absolute top-0.5 bottom-0.5 bg-brand-500 rounded-sm" style={{ left: `${einfStart}%`, width: `${einfEnd - einfStart}%` }} />
+                    )}
+                    {vollStart !== null && 100 > vollStart && (
+                      <div className="absolute top-0.5 bottom-0.5 bg-gray-300 rounded-sm" style={{ left: `${vollStart}%`, width: `${100 - vollStart}%` }} />
+                    )}
+                  </div>
+                )
+              }
+
+              return (
+                <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <div className="flex gap-5 mb-4 text-xs text-gray-500">
+                    <div className="flex items-center gap-1.5"><div className="w-4 h-3 rounded-sm bg-sky-300" /><span>Erprobung</span></div>
+                    <div className="flex items-center gap-1.5"><div className="w-4 h-3 rounded-sm bg-brand-500" /><span>Einführung</span></div>
+                    <div className="flex items-center gap-1.5"><div className="w-4 h-3 rounded-sm bg-gray-300" /><span>Vollnutzung</span></div>
+                  </div>
+
+                  <div className="flex mb-1">
+                    <div className="w-44 shrink-0" />
+                    <div className="flex-1 relative h-5">
+                      {quarters.map((q, i) => (
+                        <div key={i} className="absolute text-[10px] text-gray-400 font-medium text-center truncate"
+                          style={{ left: `${q.pct}%`, width: `${q.width}%` }}>
+                          {q.label}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* ART Maturity Bar */}
+                  {matMilestones.length > 0 && (
+                    <div className="flex items-center gap-2 mb-3 mt-1">
+                      <div className="w-44 shrink-0 text-[10px] text-gray-500 font-medium text-right pr-3">ART-Maturität</div>
+                      <div className="flex-1 relative h-6 rounded overflow-hidden bg-gray-100">
+                        {quarters.slice(1).map((q, i) => (
+                          <div key={i} className="absolute top-0 bottom-0 border-l border-white/50 z-10" style={{ left: `${q.pct}%` }} />
+                        ))}
+                        {matMilestones.map((m, i) => {
+                          const startPct = Math.max(0, toPct(m.date) ?? 0)
+                          const nextDate = matMilestones[i + 1]?.date
+                          const endPct = nextDate ? Math.min(100, toPct(nextDate) ?? 100) : 100
+                          if (endPct <= startPct) return null
+                          const cIdx = allMatCodes.indexOf(m.code)
+                          const bg = matBg[Math.min(cIdx, matBg.length - 1)]
+                          const tx = matTx[Math.min(cIdx, matTx.length - 1)]
+                          return (
+                            <div key={m.code}
+                              className={`absolute top-0 bottom-0 flex items-center justify-start overflow-hidden ${bg}`}
+                              style={{ left: `${startPct}%`, width: `${endPct - startPct}%` }}>
+                              <span className={`text-[10px] font-bold truncate pl-1.5 ${tx}`}>{m.code}</span>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {groups.length === 0 && (
+                    <p className="text-gray-400 text-sm py-2">Noch keine Zeitplanungen erfasst.</p>
+                  )}
+                  {groups.map((group, gi) => {
+                    const uc = useCases.find(u => u.id === group.ucId)!
+                    return (
+                      <div key={group.ucId} className={gi > 0 ? 'mt-4' : ''}>
+                        <p className="text-xs font-semibold text-gray-700 mb-1">{group.rank}. {uc.title}</p>
+                        {group.teams.map(team => (
+                          <div key={team.teamId}>
+                            {team.showSingle ? (
+                              <div className="flex items-center gap-2 mb-1">
+                                <div className="w-44 shrink-0 text-xs text-gray-400 text-right pr-3 truncate">{team.teamName}</div>
+                                <GanttBar dates={team.singleDates} />
+                              </div>
+                            ) : (
+                              <>
+                                <div className="flex items-center mb-0.5">
+                                  <div className="w-44 shrink-0 text-xs text-gray-500 font-medium text-right pr-3 truncate">{team.teamName}</div>
+                                  <div className="flex-1" />
+                                </div>
+                                {team.capRows.map(cap => (
+                                  <div key={cap.capId} className="flex items-center gap-2 mb-1">
+                                    <div className="w-44 shrink-0 text-[10px] text-gray-400 text-right pr-3 pl-3 truncate">{cap.capName}</div>
+                                    <GanttBar dates={cap} />
+                                  </div>
+                                ))}
+                              </>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })}
+                </div>
+              )
+            })()}
           </CollapsibleSection>
 
           {/* ══════ POTENTIALANALYSE ══════════════════════════════════════ */}
@@ -1323,17 +1745,6 @@ function UseCaseView({ useCase, teams, statusRows, capabilities, capLinks, exist
             )}
           </div>
           {useCase.description && <p className="text-xs text-gray-500 mt-0.5">{useCase.description}</p>}
-          {capLinks.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 mt-2">
-              {capLinks.map(link => (
-                <span key={link.capability_id} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                  <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: getCapColor(link.capability_id) }} />
-                  {getCapName(link.capability_id)}
-                  {link.efficiency_potential != null && <span className="ml-0.5 text-gray-400">{link.efficiency_potential}%</span>}
-                </span>
-              ))}
-            </div>
-          )}
         </div>
         {editable && (
           <button type="button" onClick={onEdit}

@@ -60,6 +60,7 @@ alter table arts add column if not exists responsible_person text;
 alter table arts add column if not exists cyber_criticality text check (cyber_criticality in ('Hoch', 'Mittel', 'Tief'));
 alter table arts add column if not exists cyber_criticality_reason text;
 alter table arts add column if not exists guidance_mode_reason text;
+alter table arts add column if not exists planned_approach text;
 
 create index if not exists idx_arts_org on arts(org_id);
 create index if not exists idx_arts_edit_token on arts(edit_token);
@@ -103,14 +104,30 @@ create table if not exists ai_use_cases (
   title          text not null,
   description    text,
   link           text,
-  status         text check (status in ('Backlog', 'Lösungsexploration', 'Entwicklung', 'Rollout', 'In Betrieb', 'Abgebrochen')),
+  status         text check (status in ('In Backlog', 'In Lösungsexploration', 'In Entwicklung', 'Im Rollout', 'In Betrieb', 'Abgebrochen')),
   available_from date,
   sort_order     integer not null default 0,
   created_at     timestamptz not null default now()
 );
 
-alter table ai_use_cases add column if not exists status text check (status in ('Backlog', 'Lösungsexploration', 'Entwicklung', 'Rollout', 'In Betrieb', 'Abgebrochen'));
+alter table ai_use_cases add column if not exists status text;
 alter table ai_use_cases add column if not exists available_from date;
+
+-- Migrate old status values to new naming (idempotent)
+alter table ai_use_cases drop constraint if exists ai_use_cases_status_check;
+update ai_use_cases set status = 'In Backlog'            where status = 'Backlog';
+update ai_use_cases set status = 'In Lösungsexploration' where status = 'Lösungsexploration';
+update ai_use_cases set status = 'In Entwicklung'        where status = 'Entwicklung';
+update ai_use_cases set status = 'Im Rollout'            where status = 'Rollout';
+do $$ begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'ai_use_cases'::regclass and conname = 'ai_use_cases_status_check'
+  ) then
+    alter table ai_use_cases add constraint ai_use_cases_status_check
+      check (status in ('In Backlog', 'In Lösungsexploration', 'In Entwicklung', 'Im Rollout', 'In Betrieb', 'Abgebrochen'));
+  end if;
+end $$;
 
 create table if not exists ai_use_case_capabilities (
   id                  uuid primary key default uuid_generate_v4(),
@@ -258,6 +275,21 @@ do $$ begin
   end if;
 end $$;
 
+-- ─── ART Use Case Ratings (Nutzen / Skalierbarkeit / Akzeptanz) ──────────
+
+create table if not exists art_use_case_ratings (
+  id               uuid primary key default uuid_generate_v4(),
+  art_id           uuid not null references arts(id) on delete cascade,
+  use_case_id      uuid not null references ai_use_cases(id) on delete cascade,
+  nutzen           integer not null default 1 check (nutzen >= 1 and nutzen <= 5),
+  skalierbarkeit   integer not null default 1 check (skalierbarkeit >= 1 and skalierbarkeit <= 5),
+  akzeptanz        integer not null default 1 check (akzeptanz >= 1 and akzeptanz <= 5),
+  created_at       timestamptz not null default now(),
+  unique (art_id, use_case_id)
+);
+
+create index if not exists idx_art_uc_ratings_art on art_use_case_ratings(art_id);
+
 -- ─── Row Level Security ─────────────────────────────────────────────────
 
 alter table business_divisions enable row level security;
@@ -276,6 +308,7 @@ alter table team_members enable row level security;
 alter table team_capability_allocations enable row level security;
 alter table art_ai_use_cases enable row level security;
 alter table art_ai_use_case_dates enable row level security;
+alter table art_use_case_ratings enable row level security;
 
 -- Policies (drop + create to be idempotent)
 do $$ begin
@@ -295,6 +328,7 @@ do $$ begin
   drop policy if exists "auth_all" on team_capability_allocations;
   drop policy if exists "auth_all" on art_ai_use_cases;
   drop policy if exists "auth_all" on art_ai_use_case_dates;
+  drop policy if exists "auth_all" on art_use_case_ratings;
 end $$;
 
 create policy "auth_all" on business_divisions for all using (true) with check (true);
@@ -313,3 +347,4 @@ create policy "auth_all" on team_members for all using (true) with check (true);
 create policy "auth_all" on team_capability_allocations for all using (true) with check (true);
 create policy "auth_all" on art_ai_use_cases for all using (true) with check (true);
 create policy "auth_all" on art_ai_use_case_dates for all using (true) with check (true);
+create policy "auth_all" on art_use_case_ratings for all using (true) with check (true);

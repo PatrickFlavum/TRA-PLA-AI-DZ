@@ -12,14 +12,14 @@ import type { AIUseCase, AIUseCaseStatus, BizDevOpsCapability, MaturityLevel } f
 export const getStaticProps: GetStaticProps = async () => ({ props: {} })
 
 const STATUS_OPTIONS: AIUseCaseStatus[] = [
-  'Backlog', 'Lösungsexploration', 'Entwicklung', 'Rollout', 'In Betrieb', 'Abgebrochen',
+  'In Backlog', 'In Lösungsexploration', 'In Entwicklung', 'Im Rollout', 'In Betrieb', 'Abgebrochen',
 ]
 
 const STATUS_BADGE: Record<AIUseCaseStatus, string> = {
-  'Backlog': 'bg-gray-100 text-gray-600',
-  'Lösungsexploration': 'bg-blue-50 text-blue-700',
-  'Entwicklung': 'bg-amber-50 text-amber-700',
-  'Rollout': 'bg-purple-50 text-purple-700',
+  'In Backlog': 'bg-gray-100 text-gray-600',
+  'In Lösungsexploration': 'bg-blue-50 text-blue-700',
+  'In Entwicklung': 'bg-amber-50 text-amber-700',
+  'Im Rollout': 'bg-purple-50 text-purple-700',
   'In Betrieb': 'bg-green-50 text-green-700',
   'Abgebrochen': 'bg-red-50 text-red-600',
 }

@@ -33,6 +33,7 @@ export type ART = {
   cyber_criticality_reason: string | null
   guidance_mode_reason: string | null
   current_maturity_level_id: string | null
+  planned_approach: string | null
   created_at: string
 }
 
@@ -111,7 +112,7 @@ export type MaturityLevel = {
   created_at: string
 }
 
-export type AIUseCaseStatus = 'Backlog' | 'Lösungsexploration' | 'Entwicklung' | 'Rollout' | 'In Betrieb' | 'Abgebrochen'
+export type AIUseCaseStatus = 'In Backlog' | 'In Lösungsexploration' | 'In Entwicklung' | 'Im Rollout' | 'In Betrieb' | 'Abgebrochen'
 
 export type AIUseCase = {
   id: string
@@ -157,5 +158,15 @@ export type ARTUseCaseDateRow = {
   pilot_from: string | null
   rollout_from: string | null
   full_usage_from: string | null
+  created_at: string
+}
+
+export type ARTUseCaseRating = {
+  id: string
+  art_id: string
+  use_case_id: string
+  nutzen: number
+  skalierbarkeit: number
+  akzeptanz: number
   created_at: string
 }

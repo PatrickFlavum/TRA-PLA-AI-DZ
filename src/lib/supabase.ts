@@ -4,7 +4,7 @@ import type {
   PlanVersion, Team, TeamMember, TeamCapabilityAllocation,
   GuidanceMode, MaturityLevel, AIUseCase, AIUseCaseCapability,
   AIUseCaseMaturityLevel, ARTUseCase, ARTUseCaseStatus, ARTUseCaseDateRow,
-  BusinessDivision,
+  ARTUseCaseRating, BusinessDivision,
 } from '@/types/database'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -179,7 +179,7 @@ export async function createART(
 
 export async function updateART(
   id: string,
-  params: Partial<Pick<ART, 'name' | 'description' | 'mission_statement' | 'business_context' | 'risks' | 'budget_2027' | 'guidance_mode_id' | 'art_leadership' | 'responsible_person' | 'cyber_criticality' | 'cyber_criticality_reason' | 'guidance_mode_reason' | 'current_maturity_level_id'>>
+  params: Partial<Pick<ART, 'name' | 'description' | 'mission_statement' | 'business_context' | 'risks' | 'budget_2027' | 'guidance_mode_id' | 'art_leadership' | 'responsible_person' | 'cyber_criticality' | 'cyber_criticality_reason' | 'guidance_mode_reason' | 'current_maturity_level_id' | 'planned_approach'>>
 ): Promise<void> {
   const { error } = await supabase
     .from('arts')
@@ -786,5 +786,29 @@ export async function deleteARTUseCaseDateRows(artId: string, useCaseId: string,
     .eq('art_id', artId)
     .eq('use_case_id', useCaseId)
     .eq('team_id', teamId)
+  if (error) throw error
+}
+
+// ─── ART Use Case Ratings (Nutzen / Skalierbarkeit / Akzeptanz) ───────────
+
+export async function loadARTUseCaseRatings(artId: string): Promise<ARTUseCaseRating[]> {
+  const { data, error } = await supabase
+    .from('art_use_case_ratings')
+    .select('*')
+    .eq('art_id', artId)
+  if (error) throw error
+  return (data ?? []) as ARTUseCaseRating[]
+}
+
+export async function upsertARTUseCaseRating(params: {
+  art_id: string
+  use_case_id: string
+  nutzen: number
+  skalierbarkeit: number
+  akzeptanz: number
+}): Promise<void> {
+  const { error } = await supabase
+    .from('art_use_case_ratings')
+    .upsert(params, { onConflict: 'art_id,use_case_id' })
   if (error) throw error
 }
