@@ -6,8 +6,9 @@ import { AdminLayout } from '@/components/layout/AdminLayout'
 import {
   loadOrganization, updateOrganization,
   loadARTs, createART, deleteART,
+  loadBusinessDivisions,
 } from '@/lib/supabase'
-import type { Organization, ART } from '@/types/database'
+import type { Organization, ART, BusinessDivision } from '@/types/database'
 
 export const getStaticProps: GetStaticProps = async () => ({ props: {} })
 
@@ -17,12 +18,14 @@ export default function AODetailPage() {
 
   const [org, setOrg] = useState<Organization | null>(null)
   const [arts, setARTs] = useState<ART[]>([])
+  const [divisions, setDivisions] = useState<BusinessDivision[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const [editingOrg, setEditingOrg] = useState(false)
   const [orgName, setOrgName] = useState('')
   const [orgDesc, setOrgDesc] = useState('')
+  const [orgDivisionId, setOrgDivisionId] = useState<string | null>(null)
 
   const [showArtForm, setShowArtForm] = useState(false)
   const [artName, setArtName] = useState('')
@@ -32,10 +35,11 @@ export default function AODetailPage() {
   const loadData = async () => {
     if (!orgId) return
     try {
-      const [o, a] = await Promise.all([loadOrganization(orgId), loadARTs(orgId)])
+      const [o, a, divs] = await Promise.all([loadOrganization(orgId), loadARTs(orgId), loadBusinessDivisions()])
       setOrg(o)
       setARTs(a)
-      if (o) { setOrgName(o.name); setOrgDesc(o.description ?? '') }
+      setDivisions(divs)
+      if (o) { setOrgName(o.name); setOrgDesc(o.description ?? ''); setOrgDivisionId(o.business_division_id) }
     } catch {
       setError('Fehler beim Laden.')
     } finally {
@@ -49,7 +53,7 @@ export default function AODetailPage() {
     e.preventDefault()
     if (!orgId || !orgName.trim()) return
     try {
-      await updateOrganization(orgId, { name: orgName.trim(), description: orgDesc.trim() || null })
+      await updateOrganization(orgId, { name: orgName.trim(), description: orgDesc.trim() || null, business_division_id: orgDivisionId })
       setEditingOrg(false)
       loadData()
     } catch {
@@ -135,6 +139,18 @@ export default function AODetailPage() {
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
                 />
               </div>
+              <div>
+                <label htmlFor="org-div" className="block text-xs font-medium text-gray-600 mb-1">IT-Geschäftsbereich</label>
+                <select
+                  id="org-div"
+                  value={orgDivisionId ?? ''}
+                  onChange={e => setOrgDivisionId(e.target.value || null)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500"
+                >
+                  <option value="">– Nicht zugeordnet –</option>
+                  {divisions.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
+                </select>
+              </div>
               <div className="flex gap-2">
                 <button type="submit" className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg">
                   Speichern
@@ -149,6 +165,11 @@ export default function AODetailPage() {
               <div>
                 <h2 className="text-xl font-bold text-gray-900">{org.name}</h2>
                 {org.description && <p className="text-sm text-gray-500 mt-1">{org.description}</p>}
+                {org.business_division_id && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    IT-Geschäftsbereich: {divisions.find(d => d.id === org.business_division_id)?.title ?? '–'}
+                  </p>
+                )}
               </div>
               <button
                 type="button"

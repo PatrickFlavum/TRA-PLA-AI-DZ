@@ -64,6 +64,9 @@ export function AdminLayout({ children, title }: Props) {
             )}
           </div>
           <div className="flex items-center gap-4">
+            <Link href="/admin/business-divisions" className="text-xs text-gray-500 hover:text-gray-800 transition-colors">
+              Geschäftsbereiche
+            </Link>
             <Link href="/admin/rollen" className="text-xs text-gray-500 hover:text-gray-800 transition-colors">
               MA-Rollen
             </Link>

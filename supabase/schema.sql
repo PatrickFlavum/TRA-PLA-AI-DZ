@@ -3,14 +3,26 @@
 
 create extension if not exists "uuid-ossp";
 
--- ─── Organizations (Arbeitsorganisationen) ───────────────────────────────
+-- ─── Business Divisions (IT-Geschäftsbereiche) ──────────────────────────
 
-create table if not exists organizations (
+create table if not exists business_divisions (
   id          uuid primary key default uuid_generate_v4(),
-  name        text not null,
+  title       text not null,
   description text,
   created_at  timestamptz not null default now()
 );
+
+-- ─── Organizations (Arbeitsorganisationen) ───────────────────────────────
+
+create table if not exists organizations (
+  id                   uuid primary key default uuid_generate_v4(),
+  name                 text not null,
+  description          text,
+  business_division_id uuid references business_divisions(id),
+  created_at           timestamptz not null default now()
+);
+
+alter table organizations add column if not exists business_division_id uuid references business_divisions(id);
 
 -- ─── Guidance Modes (Begleitungsmodi) ───────────────────────────────────
 
@@ -43,6 +55,12 @@ create table if not exists arts (
 alter table arts add column if not exists mission_statement text;
 alter table arts add column if not exists budget_2027 numeric(14,2);
 alter table arts add column if not exists guidance_mode_id uuid references guidance_modes(id);
+alter table arts add column if not exists art_leadership text;
+alter table arts add column if not exists responsible_person text;
+alter table arts add column if not exists cyber_criticality text check (cyber_criticality in ('Hoch', 'Mittel', 'Tief'));
+alter table arts add column if not exists cyber_criticality_reason text;
+alter table arts add column if not exists guidance_mode_reason text;
+alter table arts add column if not exists current_maturity_level_id uuid references maturity_levels(id);
 
 create index if not exists idx_arts_org on arts(org_id);
 create index if not exists idx_arts_edit_token on arts(edit_token);
@@ -240,6 +258,7 @@ end $$;
 
 -- ─── Row Level Security ─────────────────────────────────────────────────
 
+alter table business_divisions enable row level security;
 alter table organizations enable row level security;
 alter table guidance_modes enable row level security;
 alter table arts enable row level security;
@@ -258,6 +277,7 @@ alter table art_ai_use_case_dates enable row level security;
 
 -- Policies (drop + create to be idempotent)
 do $$ begin
+  drop policy if exists "auth_all" on business_divisions;
   drop policy if exists "auth_all" on organizations;
   drop policy if exists "auth_all" on guidance_modes;
   drop policy if exists "auth_all" on arts;
@@ -275,6 +295,7 @@ do $$ begin
   drop policy if exists "auth_all" on art_ai_use_case_dates;
 end $$;
 
+create policy "auth_all" on business_divisions for all using (true) with check (true);
 create policy "auth_all" on organizations for all using (true) with check (true);
 create policy "auth_all" on guidance_modes for all using (true) with check (true);
 create policy "auth_all" on arts for all using (true) with check (true);

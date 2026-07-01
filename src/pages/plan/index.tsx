@@ -17,11 +17,14 @@ import {
   loadAIUseCases, loadAllUseCaseCapabilityLinks,
   loadARTUseCases, addUseCaseToART, removeUseCaseFromART, upsertARTUseCaseStatus,
   loadARTUseCaseDates, upsertARTUseCaseDateRow, deleteARTUseCaseDateRows,
+  loadMaturityLevels, loadAllUseCaseMaturityLinks,
 } from '@/lib/supabase'
 import type {
   ART, Organization, PlanVersion, Team, TeamMember,
   EmployeeRole, BizDevOpsCapability, GuidanceMode,
-  AIUseCase, AIUseCaseCapability, ARTUseCase, ARTUseCaseStatus, ARTUseCaseDateRow,
+  AIUseCase, AIUseCaseStatus, AIUseCaseCapability, AIUseCaseMaturityLevel,
+  MaturityLevel, ARTUseCase, ARTUseCaseStatus, ARTUseCaseDateRow,
+  CyberCriticality,
 } from '@/types/database'
 
 export const getStaticProps: GetStaticProps = async () => ({ props: {} })
@@ -153,6 +156,8 @@ export default function PlanPage() {
   const [guidanceModes, setGuidanceModes] = useState<GuidanceMode[]>([])
   const [useCases, setUseCases] = useState<AIUseCase[]>([])
   const [useCaseCapLinks, setUseCaseCapLinks] = useState<AIUseCaseCapability[]>([])
+  const [useCaseMaturityLinks, setUseCaseMaturityLinks] = useState<AIUseCaseMaturityLevel[]>([])
+  const [maturityLevels, setMaturityLevels] = useState<MaturityLevel[]>([])
   const [artUseCases, setArtUseCases] = useState<ARTUseCase[]>([])
   const [artUseCaseDates, setArtUseCaseDates] = useState<ARTUseCaseDateRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -169,6 +174,12 @@ export default function PlanPage() {
   const [businessContext, setBusinessContext] = useState('')
   const [risks, setRisks] = useState('')
   const [guidanceModeId, setGuidanceModeId] = useState<string | null>(null)
+  const [guidanceModeReason, setGuidanceModeReason] = useState('')
+  const [artLeadership, setArtLeadership] = useState('')
+  const [responsiblePerson, setResponsiblePerson] = useState('')
+  const [cyberCriticality, setCyberCriticality] = useState<CyberCriticality | ''>('')
+  const [cyberCriticalityReason, setCyberCriticalityReason] = useState('')
+  const [currentMaturityLevelId, setCurrentMaturityLevelId] = useState<string | null>(null)
   const [budget2027, setBudget2027] = useState('')
   const [showCheckIn, setShowCheckIn] = useState(false)
   const [changeDesc, setChangeDesc] = useState('')
@@ -178,6 +189,17 @@ export default function PlanPage() {
 
   const isDraft = latestVersion?.status === 'draft'
   const editable = canEdit && isDraft
+
+  // Compute which maturity level is currently reached based on rollout_from dates ≤ today
+  const todayStr = new Date().toISOString().split('T')[0]
+  const reachedUseCaseIds = Array.from(new Set(
+    artUseCaseDates.filter(d => d.rollout_from && d.rollout_from <= todayStr).map(d => d.use_case_id)
+  ))
+  const reachedMaturityIds = new Set(
+    useCaseMaturityLinks.filter(l => reachedUseCaseIds.includes(l.use_case_id)).map(l => l.maturity_level_id)
+  )
+  // maturityLevels is sorted ascending by code – highest reached = last match
+  const computedMaturityLevel = [...maturityLevels].filter(m => reachedMaturityIds.has(m.id)).pop() ?? maturityLevels[0] ?? null
 
   const loadData = useCallback(async () => {
     if (!token) return
@@ -192,17 +214,24 @@ export default function PlanPage() {
       setBusinessContext(a.business_context ?? '')
       setRisks(a.risks ?? '')
       setGuidanceModeId(a.guidance_mode_id)
+      setGuidanceModeReason(a.guidance_mode_reason ?? '')
+      setArtLeadership(a.art_leadership ?? '')
+      setResponsiblePerson(a.responsible_person ?? '')
+      setCyberCriticality((a.cyber_criticality as CyberCriticality | '') ?? '')
+      setCyberCriticalityReason(a.cyber_criticality_reason ?? '')
+      setCurrentMaturityLevelId(a.current_maturity_level_id ?? null)
       setBudget2027(a.budget_2027 != null ? String(a.budget_2027) : '')
 
-      const [o, v, teams, r, c, gm, uc, ucLinks, auc, aucDates] = await Promise.all([
+      const [o, v, teams, r, c, gm, uc, ucLinks, ucMatLinks, ml, auc, aucDates] = await Promise.all([
         loadOrganization(a.org_id), loadPlanVersions(a.id), loadTeams(a.id),
         loadEmployeeRoles(), loadCapabilities(), loadGuidanceModes(),
-        loadAIUseCases(), loadAllUseCaseCapabilityLinks(),
-        loadARTUseCases(a.id), loadARTUseCaseDates(a.id),
+        loadAIUseCases(), loadAllUseCaseCapabilityLinks(), loadAllUseCaseMaturityLinks(),
+        loadMaturityLevels(), loadARTUseCases(a.id), loadARTUseCaseDates(a.id),
       ])
       setOrg(o); setVersions(v); setLatestVersion(v[0] ?? null)
       setRoles(r); setCapabilities(c); setGuidanceModes(gm)
       setUseCases(uc); setUseCaseCapLinks(ucLinks)
+      setUseCaseMaturityLinks(ucMatLinks); setMaturityLevels(ml)
       setArtUseCases(auc); setArtUseCaseDates(aucDates)
 
       const teamIds = teams.map(t => t.id)
@@ -225,16 +254,37 @@ export default function PlanPage() {
     if (!art) return
     setSaving(true)
     try {
-      await updateART(art.id, { mission_statement: missionStatement, business_context: businessContext, risks, guidance_mode_id: guidanceModeId })
-      setArt({ ...art, mission_statement: missionStatement, business_context: businessContext, risks, guidance_mode_id: guidanceModeId })
+      const updates = {
+        mission_statement: missionStatement,
+        business_context: businessContext,
+        risks,
+        guidance_mode_id: guidanceModeId,
+        guidance_mode_reason: guidanceModeReason || null,
+        art_leadership: artLeadership || null,
+        responsible_person: responsiblePerson || null,
+        cyber_criticality: (cyberCriticality as CyberCriticality) || null,
+        cyber_criticality_reason: cyberCriticalityReason || null,
+        current_maturity_level_id: currentMaturityLevelId,
+      }
+      await updateART(art.id, updates)
+      setArt({ ...art, ...updates })
       setEditingIntro(false)
     } catch { setError('Fehler beim Speichern.') }
     finally { setSaving(false) }
   }
 
   const handleCancelIntro = () => {
-    setMissionStatement(art?.mission_statement ?? ''); setBusinessContext(art?.business_context ?? '')
-    setRisks(art?.risks ?? ''); setGuidanceModeId(art?.guidance_mode_id ?? null); setEditingIntro(false)
+    setMissionStatement(art?.mission_statement ?? '')
+    setBusinessContext(art?.business_context ?? '')
+    setRisks(art?.risks ?? '')
+    setGuidanceModeId(art?.guidance_mode_id ?? null)
+    setGuidanceModeReason(art?.guidance_mode_reason ?? '')
+    setArtLeadership(art?.art_leadership ?? '')
+    setResponsiblePerson(art?.responsible_person ?? '')
+    setCyberCriticality((art?.cyber_criticality as CyberCriticality | '') ?? '')
+    setCyberCriticalityReason(art?.cyber_criticality_reason ?? '')
+    setCurrentMaturityLevelId(art?.current_maturity_level_id ?? null)
+    setEditingIntro(false)
   }
 
   const handleSaveFinanzen = async () => {
@@ -340,6 +390,8 @@ export default function PlanPage() {
     try {
       await Promise.all(rows.map(r => upsertARTUseCaseStatus({ art_id: art.id, use_case_id: useCaseId, team_id: r.team_id, status: r.status })))
       const plannedTeamIds = rows.filter(r => r.status === 'planned').map(r => r.team_id)
+      const notPlannedTeamIds = rows.filter(r => r.status !== 'planned').map(r => r.team_id)
+      await Promise.all(notPlannedTeamIds.map(teamId => deleteARTUseCaseDateRows(art.id, useCaseId, teamId)))
       const relevantDates = dateRows.filter(d => plannedTeamIds.includes(d.teamId))
       await Promise.all(relevantDates.map(d => upsertARTUseCaseDateRow({
         art_id: art.id, use_case_id: useCaseId, team_id: d.teamId, capability_id: d.capId,
@@ -356,6 +408,7 @@ export default function PlanPage() {
   const artSummary = buildSummary(allMembers, roles)
   const artTotals = sumTotals(artSummary)
   const selectedMode = guidanceModes.find(m => m.id === art?.guidance_mode_id)
+  const selectedMaturityLevel = maturityLevels.find(m => m.id === art?.current_maturity_level_id)
 
   const artCapAllocation: Record<string, number> = {}
   if (teamsData.length > 0) {
@@ -509,6 +562,24 @@ export default function PlanPage() {
               )}
             </div>
 
+            {/* ── ART-Leitung & Verantwortliche Person ── */}
+            {(art.art_leadership || art.responsible_person) && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                {art.art_leadership && (
+                  <div className="bg-white rounded-xl border border-gray-200 p-4">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">ART-Leitung</p>
+                    <p className="text-sm text-gray-900 whitespace-pre-wrap">{art.art_leadership}</p>
+                  </div>
+                )}
+                {art.responsible_person && (
+                  <div className="bg-white rounded-xl border border-gray-200 p-4">
+                    <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Verantwortliche Person</p>
+                    <p className="text-sm text-gray-900">{art.responsible_person}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* ── 4 KPI Boxes ── */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
               <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
@@ -521,12 +592,22 @@ export default function PlanPage() {
                 <p className="text-xs text-gray-500">{artTotals.totalHC} HC</p>
               </div>
               <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-                <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Budget 2027</p>
-                <p className="text-2xl font-bold text-gray-900">{formatCHF(art.budget_2027)}</p>
+                <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Aktuelle AI-Maturität</p>
+                {selectedMaturityLevel ? (
+                  <>
+                    <p className="text-xl font-bold text-gray-900">{selectedMaturityLevel.code}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">{selectedMaturityLevel.title}</p>
+                  </>
+                ) : (
+                  <p className="text-2xl font-bold text-gray-300">–</p>
+                )}
               </div>
-              <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+              <div className="bg-white rounded-xl border border-gray-200 p-4">
                 <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Begleitungsmodus</p>
-                <p className="text-lg font-bold text-gray-900">{selectedMode?.title ?? '–'}</p>
+                <p className="text-base font-bold text-gray-900">{selectedMode ? `${selectedMode.letter} – ${selectedMode.title}` : '–'}</p>
+                {art.guidance_mode_reason && (
+                  <p className="text-xs text-gray-500 mt-1">{art.guidance_mode_reason}</p>
+                )}
               </div>
             </div>
 
@@ -536,6 +617,22 @@ export default function PlanPage() {
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
                   <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Mission Statement / Beschreibung ART</h4>
                   <RichTextEditor value={missionStatement} onChange={setMissionStatement} placeholder="Mission Statement / Beschreibung des ART…" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="bg-white rounded-xl border border-gray-200 p-5">
+                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">ART-Leitung</h4>
+                    <p className="text-[10px] text-gray-400 mb-2">Vorname Name, Rolle</p>
+                    <textarea value={artLeadership} onChange={e => setArtLeadership(e.target.value)} rows={3}
+                      placeholder="z.B. Max Muster, Chief Product Officer"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                  </div>
+                  <div className="bg-white rounded-xl border border-gray-200 p-5">
+                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Verantwortliche Person für diesen Plan</h4>
+                    <p className="text-[10px] text-gray-400 mb-2">Üblicherweise RTE des ART oder STE der AO</p>
+                    <input type="text" value={responsiblePerson} onChange={e => setResponsiblePerson(e.target.value)}
+                      placeholder="z.B. Anna Muster"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -550,12 +647,53 @@ export default function PlanPage() {
                   </div>
                 </div>
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cyber-Kritikalität</h4>
+                  <div className="flex items-start gap-4">
+                    <div className="shrink-0">
+                      <label htmlFor="cyber-crit" className="block text-[10px] text-gray-400 mb-1">Einstufung</label>
+                      <select id="cyber-crit" value={cyberCriticality} onChange={e => setCyberCriticality(e.target.value as CyberCriticality | '')}
+                        className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-brand-500">
+                        <option value="">– Nicht gewählt –</option>
+                        <option value="Hoch">Hoch</option>
+                        <option value="Mittel">Mittel</option>
+                        <option value="Tief">Tief</option>
+                      </select>
+                    </div>
+                    <div className="flex-1">
+                      <label htmlFor="cyber-reason" className="block text-[10px] text-gray-400 mb-1">Begründung</label>
+                      <textarea id="cyber-reason" value={cyberCriticalityReason} onChange={e => setCyberCriticalityReason(e.target.value)} rows={3}
+                        placeholder="Begründung der Cyber-Kritikalitätseinstufung…"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl border border-gray-200 p-5">
                   <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Begleitungsmodus</h4>
                   <select aria-label="Begleitungsmodus" value={guidanceModeId ?? ''} onChange={e => setGuidanceModeId(e.target.value || null)}
                     className="w-full max-w-xs px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-brand-500">
                     <option value="">– Nicht gewählt –</option>
                     {guidanceModes.map(m => <option key={m.id} value={m.id}>{m.letter} – {m.title}</option>)}
                   </select>
+                  <div className="mt-3">
+                    <label htmlFor="guidance-reason" className="block text-[10px] text-gray-400 mb-1">Begründung</label>
+                    <textarea id="guidance-reason" value={guidanceModeReason} onChange={e => setGuidanceModeReason(e.target.value)} rows={2}
+                      placeholder="Begründung für die Wahl des Begleitungsmodus…"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                  </div>
+                </div>
+                <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Aktuelle AI-Maturität</h4>
+                  <p className="text-[10px] text-gray-400 mb-2">Bestimmend ist der Ersteinsatz (Einführung ab).</p>
+                  <select aria-label="Aktuelle AI-Maturität" value={currentMaturityLevelId ?? ''} onChange={e => setCurrentMaturityLevelId(e.target.value || null)}
+                    className="w-full max-w-xs px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-brand-500">
+                    <option value="">– Nicht gewählt –</option>
+                    {maturityLevels.map(m => <option key={m.id} value={m.id}>{m.code} – {m.title}</option>)}
+                  </select>
+                  {computedMaturityLevel && (
+                    <p className="text-xs text-gray-400 mt-2">
+                      Gemäss Transformationsplan ist die momentan erreichte Stufe: <span className="font-medium text-gray-600">{computedMaturityLevel.code} – {computedMaturityLevel.title}</span>
+                    </p>
+                  )}
                 </div>
                 <div className="flex gap-2 no-print">
                   <button type="button" onClick={handleSaveIntro} disabled={saving}
@@ -580,6 +718,23 @@ export default function PlanPage() {
                       : <p className="text-xs text-gray-400 italic">Noch nicht beschrieben.</p>}
                   </div>
                 </div>
+                {(art.cyber_criticality || art.cyber_criticality_reason) && (
+                  <div className="mt-3 bg-white rounded-xl border border-gray-200 p-5">
+                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cyber-Kritikalität</h4>
+                    <div className="flex items-start gap-3">
+                      {art.cyber_criticality && (
+                        <span className={`inline-block shrink-0 px-3 py-1 rounded-full text-sm font-semibold ${
+                          art.cyber_criticality === 'Hoch' ? 'bg-red-100 text-red-700' :
+                          art.cyber_criticality === 'Mittel' ? 'bg-amber-100 text-amber-700' :
+                          'bg-green-100 text-green-700'
+                        }`}>{art.cyber_criticality}</span>
+                      )}
+                      {art.cyber_criticality_reason && (
+                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{art.cyber_criticality_reason}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {editable && (
                   <button type="button" onClick={() => setEditingIntro(true)}
                     className="mt-4 px-4 py-2 border border-gray-200 text-sm text-brand-600 hover:bg-brand-50 font-medium rounded-lg no-print">
@@ -605,7 +760,7 @@ export default function PlanPage() {
           </CollapsibleSection>
 
           {/* ══════ AKTUELLE TEAM-STRUKTUREN ══════════════════════════════ */}
-          <CollapsibleSection title="Aktuelle Team-Strukturen" subtitle="Teams, Mitarbeitende & BizDevOps Kapazitätsverteilung">
+          <CollapsibleSection title="Teams" subtitle="Teams, Mitarbeitende & BizDevOps Kapazitätsverteilung">
             <div className="space-y-4">
               {teamsData.map(td => {
                 const isEditingThis = editingTeamId === td.team.id
@@ -639,6 +794,70 @@ export default function PlanPage() {
                         {hasAnyAllocation && (
                           <div className="mt-4"><h5 className="text-sm font-semibold text-gray-700 mb-2">BizDevOps Kapazitätsverteilung</h5><StackedBar slices={allocSlices} /></div>
                         )}
+                        {(() => {
+                          type UcRow = { ucTitle: string; capId: string; pilot_from: string | null; rollout_from: string | null; full_usage_from: string | null }
+                          const plannedRows: UcRow[] = []
+                          artUseCases
+                            .filter(u => u.team_id === td.team.id && u.status === 'planned')
+                            .forEach(u => {
+                              const uc = useCases.find(x => x.id === u.use_case_id)
+                              if (!uc) return
+                              const capLinks = useCaseCapLinks.filter(l => l.use_case_id === u.use_case_id)
+                              if (capLinks.length === 0) {
+                                plannedRows.push({ ucTitle: uc.title, capId: '', pilot_from: null, rollout_from: null, full_usage_from: null })
+                              } else {
+                                capLinks.forEach(link => {
+                                  const dr = artUseCaseDates.find(d => d.use_case_id === u.use_case_id && d.team_id === td.team.id && d.capability_id === link.capability_id)
+                                  plannedRows.push({ ucTitle: uc.title, capId: link.capability_id, pilot_from: dr?.pilot_from ?? null, rollout_from: dr?.rollout_from ?? null, full_usage_from: dr?.full_usage_from ?? null })
+                                })
+                              }
+                            })
+                          const sorted = plannedRows.sort((a, b) => {
+                            const cmp = (x: string | null, y: string | null) => (x ?? '9999') < (y ?? '9999') ? -1 : (x ?? '9999') > (y ?? '9999') ? 1 : 0
+                            return cmp(a.pilot_from, b.pilot_from) || cmp(a.rollout_from, b.rollout_from) || cmp(a.full_usage_from, b.full_usage_from)
+                          })
+                          if (sorted.length === 0) return null
+                          return (
+                            <div className="mt-4">
+                              <h5 className="text-sm font-semibold text-gray-700 mb-2">Geplante AI Use Cases</h5>
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-xs">
+                                  <thead>
+                                    <tr className="text-left text-[10px] text-gray-400 border-b border-gray-100">
+                                      <th className="pb-1 font-medium pr-3">Use Case</th>
+                                      <th className="pb-1 font-medium pr-3">Capability</th>
+                                      <th className="pb-1 font-medium pr-3">Prüfung ab</th>
+                                      <th className="pb-1 font-medium pr-3">Einführung ab</th>
+                                      <th className="pb-1 font-medium">Volle Nutzung ab</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {sorted.map((row, i) => {
+                                      const cap = capabilities.find(c => c.id === row.capId)
+                                      return (
+                                        <tr key={i} className="border-b border-gray-50">
+                                          <td className="py-1 pr-3 text-gray-900">{row.ucTitle}</td>
+                                          <td className="py-1 pr-3">
+                                            {cap ? (
+                                              <span className="inline-flex items-center gap-1">
+                                                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: cap.color ?? '#6366f1' }} />
+                                                {cap.name}
+                                              </span>
+                                            ) : <span className="text-gray-400">–</span>}
+                                          </td>
+                                          <td className="py-1 pr-3 text-gray-600">{fmtDate(row.pilot_from)}</td>
+                                          <td className="py-1 pr-3 text-gray-600">{fmtDate(row.rollout_from)}</td>
+                                          <td className="py-1 text-gray-600">{fmtDate(row.full_usage_from)}</td>
+                                        </tr>
+                                      )
+                                    })}
+                                  </tbody>
+                                </table>
+                              </div>
+                              <p className="text-[10px] text-gray-400 mt-2">Bearbeitung siehe Use Case Planung</p>
+                            </div>
+                          )
+                        })()}
                       </>
                     )}
                   </div>
@@ -665,6 +884,158 @@ export default function PlanPage() {
                   + Neues Team hinzufügen</button>
               ))}
             </div>
+          </CollapsibleSection>
+
+          {/* ══════ USE CASE POTENTIALE ═══════════════════════════════════ */}
+          <CollapsibleSection title="Use Case Potentiale" subtitle="Rangliste aller Use Cases nach geschätztem FTE-Potential">
+            {(() => {
+              type UcRankRow = {
+                uc: AIUseCase
+                capLinks: AIUseCaseCapability[]
+                maturityCodes: string[]
+                anzahlTeams: number
+                anzahlHC: number
+                anzahlFTE: number
+                potentialFTE: number
+                isRelevant: boolean
+              }
+              const rows: UcRankRow[] = useCases.map(uc => {
+                const caps = useCaseCapLinks.filter(l => l.use_case_id === uc.id)
+                const matCodes = useCaseMaturityLinks
+                  .filter(l => l.use_case_id === uc.id)
+                  .map(l => maturityLevels.find(m => m.id === l.maturity_level_id)?.code ?? '')
+                  .filter(Boolean)
+                  .sort()
+
+                // Potential: sum over all teams × all capabilities
+                let potentialFTE = 0
+                teamsData.forEach(td => {
+                  const teamFTE = td.members.reduce((s, m) => s + m.fte, 0)
+                  caps.forEach(link => {
+                    if (!link.efficiency_potential) return
+                    const capFTE = teamFTE * (td.allocations[link.capability_id] ?? 0) / 100
+                    potentialFTE += capFTE * link.efficiency_potential / 100
+                  })
+                })
+
+                // Planned teams for this use case
+                const plannedTeamIds = artUseCases
+                  .filter(u => u.use_case_id === uc.id && u.status === 'planned')
+                  .map(u => u.team_id)
+                const plannedTeams = teamsData.filter(td => plannedTeamIds.includes(td.team.id))
+                const anzahlHC = plannedTeams.reduce((s, td) => s + td.members.reduce((ms, m) => ms + m.headcount, 0), 0)
+                const anzahlFTE = plannedTeams.reduce((s, td) => s + td.members.reduce((ms, m) => ms + m.fte, 0), 0)
+
+                return {
+                  uc, capLinks: caps, maturityCodes: matCodes,
+                  anzahlTeams: plannedTeamIds.length,
+                  anzahlHC, anzahlFTE,
+                  potentialFTE,
+                  isRelevant: potentialFTE > 0,
+                }
+              })
+
+              const sorted = [...rows].sort((a, b) => {
+                if (b.potentialFTE !== a.potentialFTE) return b.potentialFTE - a.potentialFTE
+                return a.uc.title.localeCompare(b.uc.title, 'de')
+              })
+
+              if (sorted.length === 0) return (
+                <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <p className="text-gray-400 text-sm">Noch keine AI Use Cases im System vorhanden.</p>
+                </div>
+              )
+
+              const UC_STATUS_BADGE: Partial<Record<AIUseCaseStatus, string>> = {
+                'Backlog': 'bg-gray-100 text-gray-600',
+                'Lösungsexploration': 'bg-blue-50 text-blue-700',
+                'Entwicklung': 'bg-amber-50 text-amber-700',
+                'Rollout': 'bg-purple-50 text-purple-700',
+                'In Betrieb': 'bg-green-50 text-green-700',
+                'Abgebrochen': 'bg-red-50 text-red-600',
+              }
+
+              return (
+                <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-left text-[10px] text-gray-400 border-b border-gray-200">
+                          <th className="pb-2 font-medium pr-2">#</th>
+                          <th className="pb-2 font-medium pr-3">Use Case</th>
+                          <th className="pb-2 font-medium pr-3">Capabilities</th>
+                          <th className="pb-2 font-medium pr-3">Maturität</th>
+                          <th className="pb-2 font-medium pr-3">Status</th>
+                          <th className="pb-2 font-medium pr-3">Verfügbar ab</th>
+                          <th className="pb-2 font-medium text-center pr-2">Teams</th>
+                          <th className="pb-2 font-medium text-center pr-2">HC / FTE</th>
+                          <th className="pb-2 font-medium text-center bg-brand-50 text-brand-700 rounded-t px-2">Potential (FTE)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sorted.map((row, i) => {
+                          const gray = !row.isRelevant ? 'text-gray-300' : 'text-gray-800'
+                          const subGray = !row.isRelevant ? 'text-gray-300' : 'text-gray-500'
+                          return (
+                            <tr key={row.uc.id} className={`border-b border-gray-50 ${!row.isRelevant ? 'opacity-50' : ''}`}>
+                              <td className={`py-2 pr-2 font-medium tabular-nums ${gray}`}>{i + 1}</td>
+                              <td className={`py-2 pr-3 font-medium ${gray}`}>
+                                {row.uc.title}
+                                {row.uc.description && <p className={`font-normal mt-0.5 ${subGray}`}>{row.uc.description}</p>}
+                              </td>
+                              <td className="py-2 pr-3">
+                                <div className="flex flex-wrap gap-1">
+                                  {row.capLinks.map(link => {
+                                    const cap = capabilities.find(c => c.id === link.capability_id)
+                                    if (!cap) return null
+                                    return (
+                                      <span key={link.capability_id} className={`inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-full ${row.isRelevant ? 'bg-gray-100 text-gray-600' : 'bg-gray-50 text-gray-300'}`}>
+                                        <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: row.isRelevant ? (cap.color ?? '#6366f1') : '#d1d5db' }} />
+                                        {cap.name}
+                                        {link.efficiency_potential != null && <span className="ml-0.5 text-gray-400">{link.efficiency_potential}%</span>}
+                                      </span>
+                                    )
+                                  })}
+                                  {row.capLinks.length === 0 && <span className={subGray}>–</span>}
+                                </div>
+                              </td>
+                              <td className="py-2 pr-3">
+                                <div className="flex flex-wrap gap-1">
+                                  {row.maturityCodes.map(code => (
+                                    <span key={code} className={`inline-block px-1.5 py-0.5 text-[10px] font-bold rounded ${row.isRelevant ? 'bg-brand-100 text-brand-700' : 'bg-gray-50 text-gray-300'}`}>{code}</span>
+                                  ))}
+                                  {row.maturityCodes.length === 0 && <span className={subGray}>–</span>}
+                                </div>
+                              </td>
+                              <td className="py-2 pr-3">
+                                {row.uc.status ? (
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${row.isRelevant ? (UC_STATUS_BADGE[row.uc.status] ?? 'bg-gray-100 text-gray-600') : 'bg-gray-50 text-gray-300'}`}>
+                                    {row.uc.status}
+                                  </span>
+                                ) : <span className={subGray}>–</span>}
+                              </td>
+                              <td className={`py-2 pr-3 tabular-nums ${subGray}`}>
+                                {row.uc.available_from ? fmtDate(row.uc.available_from) : '–'}
+                              </td>
+                              <td className={`py-2 pr-2 text-center tabular-nums ${gray}`}>{row.anzahlTeams}</td>
+                              <td className={`py-2 pr-2 text-center tabular-nums ${subGray}`}>
+                                {row.isRelevant && row.anzahlTeams > 0 ? `${row.anzahlHC} / ${fmtFTE(row.anzahlFTE)}` : '–'}
+                              </td>
+                              <td className={`py-2 text-center tabular-nums font-semibold px-2 ${row.isRelevant ? 'bg-brand-50 text-brand-700' : 'bg-gray-50 text-gray-300'}`}>
+                                {row.potentialFTE > 0 ? fmtFTE(row.potentialFTE) : '0.0'}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-3">
+                    Potential = FTE je Capability × Allokation je Team × Effizienzpotential. Ausgegraut = keine passende Capability-Allokation oder kein Effizienzpotential erfasst.
+                  </p>
+                </div>
+              )
+            })()}
           </CollapsibleSection>
 
           {/* ══════ USE CASE PLANUNG ══════════════════════════════════════ */}
@@ -972,7 +1343,7 @@ function UseCaseView({ useCase, teams, statusRows, capabilities, capLinks, exist
       </div>
 
       <div className="space-y-3">
-        {statusRows.map(r => {
+        {statusRows.filter(r => r.status !== 'not_needed').map(r => {
           const teamDates = existingDates.filter(d => d.team_id === r.team_id)
           return (
             <div key={r.team_id}>
@@ -1019,6 +1390,15 @@ function UseCaseView({ useCase, teams, statusRows, capabilities, capLinks, exist
         })}
         {statusRows.length === 0 && <p className="text-gray-400 text-xs">Keine Teams in diesem ART vorhanden.</p>}
       </div>
+      {(() => {
+        const notNeededTeams = statusRows.filter(r => r.status === 'not_needed')
+        if (notNeededTeams.length === 0) return null
+        return (
+          <p className="text-xs text-gray-400 mt-3">
+            Teams ohne Verwendung dieses Use Cases: {notNeededTeams.map(r => getTeamName(r.team_id)).join(', ')}
+          </p>
+        )
+      })()}
     </>
   )
 }

@@ -4,6 +4,7 @@ import type {
   PlanVersion, Team, TeamMember, TeamCapabilityAllocation,
   GuidanceMode, MaturityLevel, AIUseCase, AIUseCaseCapability,
   AIUseCaseMaturityLevel, ARTUseCase, ARTUseCaseStatus, ARTUseCaseDateRow,
+  BusinessDivision,
 } from '@/types/database'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -37,6 +38,48 @@ export async function signOut() {
 export async function getSession() {
   const { data } = await supabase.auth.getSession()
   return data.session
+}
+
+// ─── Business Divisions (IT-Geschäftsbereiche) ────────────────────────────────
+
+export async function loadBusinessDivisions(): Promise<BusinessDivision[]> {
+  const { data, error } = await supabase
+    .from('business_divisions')
+    .select('*')
+    .order('title')
+  if (error) throw error
+  return (data ?? []) as BusinessDivision[]
+}
+
+export async function createBusinessDivision(
+  params: Pick<BusinessDivision, 'title' | 'description'>
+): Promise<BusinessDivision> {
+  const { data, error } = await supabase
+    .from('business_divisions')
+    .insert(params)
+    .select()
+    .single()
+  if (error) throw error
+  return data as BusinessDivision
+}
+
+export async function updateBusinessDivision(
+  id: string,
+  params: Pick<BusinessDivision, 'title' | 'description'>
+): Promise<void> {
+  const { error } = await supabase
+    .from('business_divisions')
+    .update(params)
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteBusinessDivision(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('business_divisions')
+    .delete()
+    .eq('id', id)
+  if (error) throw error
 }
 
 // ─── Organizations ────────────────────────────────────────────────────────────
@@ -73,7 +116,7 @@ export async function createOrganization(
 
 export async function updateOrganization(
   id: string,
-  params: Partial<Pick<Organization, 'name' | 'description'>>
+  params: Partial<Pick<Organization, 'name' | 'description' | 'business_division_id'>>
 ): Promise<void> {
   const { error } = await supabase
     .from('organizations')
@@ -136,7 +179,7 @@ export async function createART(
 
 export async function updateART(
   id: string,
-  params: Partial<Pick<ART, 'name' | 'description' | 'mission_statement' | 'business_context' | 'risks' | 'budget_2027' | 'guidance_mode_id'>>
+  params: Partial<Pick<ART, 'name' | 'description' | 'mission_statement' | 'business_context' | 'risks' | 'budget_2027' | 'guidance_mode_id' | 'art_leadership' | 'responsible_person' | 'cyber_criticality' | 'cyber_criticality_reason' | 'guidance_mode_reason' | 'current_maturity_level_id'>>
 ): Promise<void> {
   const { error } = await supabase
     .from('arts')
@@ -528,7 +571,7 @@ export async function loadMaturityLevels(): Promise<MaturityLevel[]> {
   const { data, error } = await supabase
     .from('maturity_levels')
     .select('*')
-    .order('code', { ascending: false })
+    .order('code', { ascending: true })
   if (error) throw error
   return (data ?? []) as MaturityLevel[]
 }

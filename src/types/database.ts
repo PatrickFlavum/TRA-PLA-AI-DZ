@@ -1,9 +1,19 @@
+export type BusinessDivision = {
+  id: string
+  title: string
+  description: string | null
+  created_at: string
+}
+
 export type Organization = {
   id: string
   name: string
   description: string | null
+  business_division_id: string | null
   created_at: string
 }
+
+export type CyberCriticality = 'Hoch' | 'Mittel' | 'Tief'
 
 export type ART = {
   id: string
@@ -17,6 +27,12 @@ export type ART = {
   risks: string | null
   budget_2027: number | null
   guidance_mode_id: string | null
+  art_leadership: string | null
+  responsible_person: string | null
+  cyber_criticality: CyberCriticality | null
+  cyber_criticality_reason: string | null
+  guidance_mode_reason: string | null
+  current_maturity_level_id: string | null
   created_at: string
 }
 
