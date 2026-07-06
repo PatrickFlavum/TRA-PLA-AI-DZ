@@ -179,14 +179,14 @@ export default function PlanVersionPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
-  if (loading) return (<><Head><title>Lädt…</title></Head><div className="min-h-screen bg-gray-50 flex items-center justify-center"><p className="text-gray-400 text-sm">Lädt…</p></div></>)
-  if (error || !art || !version) return (<><Head><title>Nicht gefunden</title></Head><div className="min-h-screen bg-gray-50 flex items-center justify-center"><p className="text-red-600 text-sm">{error ?? 'Nicht gefunden.'}</p></div></>)
+  if (loading) return (<><Head><title>Lädt…</title></Head><div className="min-h-screen bg-gray-150 flex items-center justify-center"><p className="text-gray-400 text-sm">Lädt…</p></div></>)
+  if (error || !art || !version) return (<><Head><title>Nicht gefunden</title></Head><div className="min-h-screen bg-gray-150 flex items-center justify-center"><p className="text-red-600 text-sm">{error ?? 'Nicht gefunden.'}</p></div></>)
 
   if (!version.snapshot) {
     return (
       <>
         <Head><title>Version {version.version_number} – AI@DZ</title></Head>
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+        <div className="min-h-screen bg-gray-150 flex items-center justify-center px-4">
           <p className="text-gray-500 text-sm text-center">Version {version.version_number} ist noch ein Draft und wurde noch nicht eingecheckt – es liegt kein gespeicherter Stand vor.</p>
         </div>
       </>
@@ -218,7 +218,7 @@ export default function PlanVersionPage() {
   return (
     <>
       <Head><title>{snapshot.art.name ?? art.name} – Version {version.version_number} – AI@DZ</title></Head>
-      <div className="min-h-screen bg-gray-50 print:bg-white">
+      <div className="min-h-screen bg-gray-150 print:bg-white">
         <header className="bg-white border-b border-gray-200 print:hidden">
           <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
             <span className="text-sm font-bold text-brand-600 uppercase tracking-wide">AI@DZ</span>

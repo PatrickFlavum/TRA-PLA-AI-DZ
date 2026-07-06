@@ -30,7 +30,7 @@ export default function LoginPage() {
   return (
     <>
       <Head><title>Login – AI@DZ Transformation Plans</title></Head>
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
+      <div className="min-h-screen bg-gray-150 flex items-center justify-center px-4">
         <div className="w-full max-w-sm">
           <h1 className="text-2xl font-bold text-gray-900 text-center mb-1">AI@DZ</h1>
           <p className="text-sm text-gray-500 text-center mb-6">Transformation Plans – Admin</p>

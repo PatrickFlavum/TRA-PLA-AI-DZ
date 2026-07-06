@@ -170,3 +170,38 @@ export type ARTUseCaseRating = {
   akzeptanz: number
   created_at: string
 }
+
+export type QualityChecklistItem = {
+  id: string
+  sort_order: number
+  title: string
+  description: string | null
+  created_at: string
+}
+
+export type ARTQualityChecklistCompletion = {
+  id: string
+  art_id: string
+  checklist_item_id: string
+  completed_at: string
+  created_at: string
+}
+
+export type StandortbestimmungColor = 'gruen' | 'gelb' | 'rot'
+
+export type StandortbestimmungDimension = {
+  id: string
+  sort_order: number
+  title: string
+  leitfragen: string | null
+  created_at: string
+}
+
+export type ARTStandortbestimmung = {
+  id: string
+  art_id: string
+  dimension_key: string
+  color: StandortbestimmungColor | null
+  reason: string | null
+  created_at: string
+}

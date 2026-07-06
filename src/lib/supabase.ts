@@ -5,6 +5,9 @@ import type {
   GuidanceMode, MaturityLevel, AIUseCase, AIUseCaseCapability,
   AIUseCaseMaturityLevel, ARTUseCase, ARTUseCaseStatus, ARTUseCaseDateRow,
   ARTUseCaseRating, BusinessDivision,
+  QualityChecklistItem, ARTQualityChecklistCompletion,
+  ARTStandortbestimmung, StandortbestimmungColor,
+  StandortbestimmungDimension,
 } from '@/types/database'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -812,3 +815,145 @@ export async function upsertARTUseCaseRating(params: {
     .upsert(params, { onConflict: 'art_id,use_case_id' })
   if (error) throw error
 }
+
+// ─── Quality Checklist Items ──────────────────────────────────────────────
+
+export async function loadQualityChecklistItems(): Promise<QualityChecklistItem[]> {
+  const { data, error } = await supabase
+    .from('quality_checklist_items')
+    .select('*')
+    .order('sort_order')
+    .order('title')
+  if (error) throw error
+  return (data ?? []) as QualityChecklistItem[]
+}
+
+export async function createQualityChecklistItem(
+  params: Pick<QualityChecklistItem, 'sort_order' | 'title' | 'description'>
+): Promise<QualityChecklistItem> {
+  const { data, error } = await supabase
+    .from('quality_checklist_items')
+    .insert(params)
+    .select()
+    .single()
+  if (error) throw error
+  return data as QualityChecklistItem
+}
+
+export async function updateQualityChecklistItem(
+  id: string,
+  params: Pick<QualityChecklistItem, 'sort_order' | 'title' | 'description'>
+): Promise<void> {
+  const { error } = await supabase
+    .from('quality_checklist_items')
+    .update(params)
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteQualityChecklistItem(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('quality_checklist_items')
+    .delete()
+    .eq('id', id)
+  if (error) throw error
+}
+
+// ─── ART Quality Checklist Completions ───────────────────────────────────
+
+export async function loadARTQualityChecklistCompletions(artId: string): Promise<ARTQualityChecklistCompletion[]> {
+  const { data, error } = await supabase
+    .from('art_quality_checklist_completions')
+    .select('*')
+    .eq('art_id', artId)
+  if (error) throw error
+  return (data ?? []) as ARTQualityChecklistCompletion[]
+}
+
+export async function setARTQualityChecklistCompletion(
+  artId: string,
+  checklistItemId: string,
+  completed: boolean
+): Promise<void> {
+  if (completed) {
+    const { error } = await supabase
+      .from('art_quality_checklist_completions')
+      .upsert({ art_id: artId, checklist_item_id: checklistItemId, completed_at: new Date().toISOString() },
+        { onConflict: 'art_id,checklist_item_id' })
+    if (error) throw error
+  } else {
+    const { error } = await supabase
+      .from('art_quality_checklist_completions')
+      .delete()
+      .eq('art_id', artId)
+      .eq('checklist_item_id', checklistItemId)
+    if (error) throw error
+  }
+}
+
+// ─── ART Standortbestimmung ───────────────────────────────────────────────
+
+export async function loadARTStandortbestimmung(artId: string): Promise<ARTStandortbestimmung[]> {
+  const { data, error } = await supabase
+    .from('art_standortbestimmung')
+    .select('*')
+    .eq('art_id', artId)
+  if (error) throw error
+  return (data ?? []) as ARTStandortbestimmung[]
+}
+
+export async function upsertARTStandortbestimmung(params: {
+  art_id: string
+  dimension_key: string
+  color: StandortbestimmungColor | null
+  reason: string | null
+}): Promise<void> {
+  const { error } = await supabase
+    .from('art_standortbestimmung')
+    .upsert(params, { onConflict: 'art_id,dimension_key' })
+  if (error) throw error
+}
+
+// ─── Standortbestimmung Dimensionen ──────────────────────────────────────
+
+export async function loadStandortbestimmungDimensionen(): Promise<StandortbestimmungDimension[]> {
+  const { data, error } = await supabase
+    .from('standortbestimmung_dimensionen')
+    .select('*')
+    .order('sort_order')
+    .order('title')
+  if (error) throw error
+  return (data ?? []) as StandortbestimmungDimension[]
+}
+
+export async function createStandortbestimmungDimension(
+  params: Pick<StandortbestimmungDimension, 'sort_order' | 'title' | 'leitfragen'>
+): Promise<StandortbestimmungDimension> {
+  const { data, error } = await supabase
+    .from('standortbestimmung_dimensionen')
+    .insert(params)
+    .select()
+    .single()
+  if (error) throw error
+  return data as StandortbestimmungDimension
+}
+
+export async function updateStandortbestimmungDimension(
+  id: string,
+  params: Pick<StandortbestimmungDimension, 'sort_order' | 'title' | 'leitfragen'>
+): Promise<void> {
+  const { error } = await supabase
+    .from('standortbestimmung_dimensionen')
+    .update(params)
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteStandortbestimmungDimension(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('standortbestimmung_dimensionen')
+    .delete()
+    .eq('id', id)
+  if (error) throw error
+}
+

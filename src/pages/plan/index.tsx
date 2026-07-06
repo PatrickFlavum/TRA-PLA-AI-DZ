@@ -20,6 +20,10 @@ import {
   loadMaturityLevels, loadAllUseCaseMaturityLinks,
   loadARTUseCaseRatings, upsertARTUseCaseRating,
   loadBusinessDivisions,
+  loadQualityChecklistItems, loadARTQualityChecklistCompletions,
+  setARTQualityChecklistCompletion,
+  loadARTStandortbestimmung, upsertARTStandortbestimmung,
+  loadStandortbestimmungDimensionen,
 } from '@/lib/supabase'
 import type {
   ART, Organization, PlanVersion, Team, TeamMember,
@@ -27,6 +31,9 @@ import type {
   AIUseCase, AIUseCaseStatus, AIUseCaseCapability, AIUseCaseMaturityLevel,
   MaturityLevel, ARTUseCase, ARTUseCaseStatus, ARTUseCaseDateRow,
   CyberCriticality, ARTUseCaseRating, BusinessDivision,
+  QualityChecklistItem, ARTQualityChecklistCompletion,
+  ARTStandortbestimmung, StandortbestimmungColor,
+  StandortbestimmungDimension,
 } from '@/types/database'
 
 export const getStaticProps: GetStaticProps = async () => ({ props: {} })
@@ -164,6 +171,11 @@ export default function PlanPage() {
   const [artUseCaseDates, setArtUseCaseDates] = useState<ARTUseCaseDateRow[]>([])
   const [artUseCaseRatings, setArtUseCaseRatings] = useState<ARTUseCaseRating[]>([])
   const [businessDivisions, setBusinessDivisions] = useState<BusinessDivision[]>([])
+  const [checklistItems, setChecklistItems] = useState<QualityChecklistItem[]>([])
+  const [checklistCompletions, setChecklistCompletions] = useState<ARTQualityChecklistCompletion[]>([])
+  const [standortbestimmung, setStandortbestimmung] = useState<ARTStandortbestimmung[]>([])
+  const [sbDimensions, setSbDimensions] = useState<StandortbestimmungDimension[]>([])
+  const [editingStandortbestimmung, setEditingStandortbestimmung] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -246,6 +258,18 @@ export default function PlanPage() {
       setUseCaseMaturityLinks(ucMatLinks); setMaturityLevels(ml)
       setArtUseCases(auc); setArtUseCaseDates(aucDates)
       setArtUseCaseRatings(ratings); setBusinessDivisions(divs)
+
+      // Optionale Tabellen – laden fehlertolerant damit fehlende DB-Tabellen die Seite nicht blockieren
+      const [qcItems, qcCompletions, sb, sbDims] = await Promise.all([
+        loadQualityChecklistItems().catch(() => []),
+        loadARTQualityChecklistCompletions(a.id).catch(() => []),
+        loadARTStandortbestimmung(a.id).catch(() => []),
+        loadStandortbestimmungDimensionen().catch(() => []),
+      ])
+      setChecklistItems(qcItems)
+      setChecklistCompletions(qcCompletions)
+      setStandortbestimmung(sb)
+      setSbDimensions(sbDims)
 
       const teamIds = teams.map(t => t.id)
       const [allMembers, allAllocs] = await Promise.all([loadAllTeamMembers(teamIds), loadAllTeamAllocations(teamIds)])
@@ -541,15 +565,15 @@ export default function PlanPage() {
 
   // ─── Loading / error ──────────────────────────────────────────────────────
 
-  if (loading) return (<><Head><title>Lädt…</title></Head><div className="min-h-screen bg-gray-50 flex items-center justify-center"><p className="text-gray-400 text-sm">Lädt…</p></div></>)
-  if (!art) return (<><Head><title>Nicht gefunden</title></Head><div className="min-h-screen bg-gray-50 flex items-center justify-center"><p className="text-red-600 text-sm">{error ?? 'Nicht gefunden.'}</p></div></>)
+  if (loading) return (<><Head><title>Lädt…</title></Head><div className="min-h-screen bg-gray-150 flex items-center justify-center"><p className="text-gray-400 text-sm">Lädt…</p></div></>)
+  if (!art) return (<><Head><title>Nicht gefunden</title></Head><div className="min-h-screen bg-gray-150 flex items-center justify-center"><p className="text-red-600 text-sm">{error ?? 'Nicht gefunden.'}</p></div></>)
 
   // ─── Page ─────────────────────────────────────────────────────────────────
 
   return (
     <>
       <Head><title>{art.name} – Transformationsplan – AI@DZ</title></Head>
-      <div className="min-h-screen bg-gray-50 print:bg-white">
+      <div className="min-h-screen bg-gray-150 print:bg-white">
 
         {/* Top bar */}
         <header className="bg-white border-b border-gray-200 print:hidden">
@@ -926,6 +950,152 @@ export default function PlanPage() {
               </>
             )}
 
+          </CollapsibleSection>
+
+          {/* ══════ STANDORTBESTIMMUNG ════════════════════════════════════ */}
+          <CollapsibleSection title="Standortbestimmung" subtitle="Bewertung von 12 Dimensionen mit Ampelfarbe und Begründung">
+            {(() => {
+              const sbMap = new Map(standortbestimmung.map(s => [s.dimension_key, s]))
+              const isEditing = editingStandortbestimmung
+              const COLOR_LABEL: Record<StandortbestimmungColor, string> = {
+                gruen: 'Bereit / Auf Kurs',
+                gelb:  'Zusätzliche Massnahmen notwendig',
+                rot:   'Show-Stopper / schwerwiegende Hindernisse',
+              }
+              const COLOR_BG: Record<StandortbestimmungColor, string> = {
+                gruen: 'bg-green-500', gelb: 'bg-yellow-400', rot: 'bg-red-500',
+              }
+              const COLOR_RING: Record<StandortbestimmungColor, string> = {
+                gruen: 'ring-green-500', gelb: 'ring-yellow-400', rot: 'ring-red-500',
+              }
+              const handleColor = async (dimKey: string, color: StandortbestimmungColor | null) => {
+                if (!art) return
+                const current = sbMap.get(dimKey)
+                const newColor = current?.color === color ? null : color
+                setStandortbestimmung(prev => {
+                  const existing = prev.find(s => s.dimension_key === dimKey)
+                  if (existing) return prev.map(s => s.dimension_key === dimKey ? { ...s, color: newColor } : s)
+                  return [...prev, { id: '', art_id: art.id, dimension_key: dimKey, color: newColor, reason: null, created_at: '' }]
+                })
+                try { await upsertARTStandortbestimmung({ art_id: art.id, dimension_key: dimKey, color: newColor, reason: current?.reason ?? null }) }
+                catch { loadData() }
+              }
+              const handleReason = async (dimKey: string, reason: string) => {
+                if (!art) return
+                const current = sbMap.get(dimKey)
+                setStandortbestimmung(prev => {
+                  const existing = prev.find(s => s.dimension_key === dimKey)
+                  if (existing) return prev.map(s => s.dimension_key === dimKey ? { ...s, reason } : s)
+                  return [...prev, { id: '', art_id: art.id, dimension_key: dimKey, color: null, reason, created_at: '' }]
+                })
+                try { await upsertARTStandortbestimmung({ art_id: art.id, dimension_key: dimKey, color: current?.color ?? null, reason: reason || null }) }
+                catch { loadData() }
+              }
+              return (
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  {/* Kopfzeile mit Legende / Bearbeiten-Button */}
+                  <div className="px-5 py-3 bg-gray-50 border-b border-gray-200 flex items-center gap-6">
+                    {(['gruen', 'gelb', 'rot'] as StandortbestimmungColor[]).map(c => (
+                      <span key={c} className="flex items-center gap-1.5 text-xs text-gray-600">
+                        <span className={`w-3 h-3 rounded-full ${COLOR_BG[c]}`} />
+                        {COLOR_LABEL[c]}
+                      </span>
+                    ))}
+                    {isEditing && (
+                      <span className="text-xs text-gray-400">Nochmals klicken hebt die Auswahl auf</span>
+                    )}
+                    {editable && (
+                      <div className="ml-auto no-print">
+                        {isEditing ? (
+                          <button type="button" onClick={() => setEditingStandortbestimmung(false)}
+                            className="px-3 py-1.5 bg-brand-600 hover:bg-brand-700 text-white text-xs font-medium rounded-lg">
+                            Fertig
+                          </button>
+                        ) : (
+                          <button type="button" onClick={() => setEditingStandortbestimmung(true)}
+                            className="px-3 py-1.5 border border-gray-200 text-xs text-brand-600 hover:bg-brand-50 font-medium rounded-lg">
+                            Bearbeiten
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
+                        <th className="px-5 py-2 font-medium w-1/2">Dimension</th>
+                        <th className="px-4 py-2 font-medium w-1/2">Begründung</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {sbDimensions.length === 0 ? (
+                        <tr><td colSpan={2} className="px-5 py-6 text-sm text-gray-400 italic text-center">
+                          Keine Dimensionen erfasst. Im Admin-Bereich unter «Standortbestimmung» können diese angelegt werden.
+                        </td></tr>
+                      ) : sbDimensions.map(dim => {
+                        const entry = sbMap.get(dim.id)
+                        const color = entry?.color ?? null
+                        return (
+                          <tr key={dim.id} className="hover:bg-gray-50 transition-colors">
+                            <td className="px-5 py-3 align-top w-1/2">
+                              <div className="flex items-start gap-3">
+                                {isEditing ? (
+                                  <div className="flex flex-col gap-1.5 pt-0.5 shrink-0">
+                                    {(['gruen', 'gelb', 'rot'] as StandortbestimmungColor[]).map(c => (
+                                      <button
+                                        key={c}
+                                        type="button"
+                                        title={COLOR_LABEL[c]}
+                                        onClick={() => handleColor(dim.id, c)}
+                                        className={`w-5 h-5 rounded-full transition-all ${COLOR_BG[c]} ${
+                                          color === c
+                                            ? `ring-2 ring-offset-1 ${COLOR_RING[c]} scale-110`
+                                            : 'opacity-25 hover:opacity-60'
+                                        }`}
+                                      />
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="pt-1 shrink-0">
+                                    {color ? (
+                                      <span className={`block w-4 h-4 rounded-full ${COLOR_BG[color]}`} title={COLOR_LABEL[color]} />
+                                    ) : (
+                                      <span className="block w-4 h-4 rounded-full bg-gray-200" title="Keine Bewertung" />
+                                    )}
+                                  </div>
+                                )}
+                                <div className="min-w-0">
+                                  <p className="font-medium text-gray-900">{dim.title}</p>
+                                  {isEditing && dim.leitfragen && (
+                                    <p className="text-xs text-gray-400 mt-1 whitespace-pre-wrap leading-relaxed">{dim.leitfragen}</p>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-4 py-3 align-top">
+                              {isEditing ? (
+                                <textarea
+                                  value={entry?.reason ?? ''}
+                                  onChange={e => handleReason(dim.id, e.target.value)}
+                                  onBlur={e => handleReason(dim.id, e.target.value)}
+                                  rows={4}
+                                  placeholder="Begründung…"
+                                  className="w-full px-2 py-1.5 text-sm border border-gray-200 rounded focus:outline-none focus:ring-1 focus:ring-brand-500 resize-none"
+                                />
+                              ) : (
+                                <p className="text-sm text-gray-600 leading-relaxed">
+                                  {entry?.reason || <span className="text-gray-300 italic">–</span>}
+                                </p>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            })()}
           </CollapsibleSection>
 
           {/* ══════ AKTUELLE TEAM-STRUKTUREN ══════════════════════════════ */}
@@ -1534,8 +1704,8 @@ export default function PlanPage() {
             })()}
           </CollapsibleSection>
 
-          {/* ══════ POTENTIALANALYSE ══════════════════════════════════════ */}
-          <CollapsibleSection title="Potentialanalyse" subtitle="Geschätztes FTE-Effizienzpotential nach Quartal (2026–2030)">
+          {/* ══════ POTENTIALANALYSE (ausgeblendet) ══════════════════════ */}
+          {false && <CollapsibleSection title="Potentialanalyse" subtitle="Geschätztes FTE-Effizienzpotential nach Quartal (2026–2030)">
             <div className="bg-white rounded-xl border border-gray-200 p-5">
               {!hasAnyPotential ? (
                 <p className="text-gray-400 text-sm">Noch kein Potential berechenbar. Plane AI Use Cases mit Status «Geplant», Volle-Nutzung-Datum und Effizienzpotential pro Capability.</p>
@@ -1581,10 +1751,10 @@ export default function PlanPage() {
                 </>
               )}
             </div>
-          </CollapsibleSection>
+          </CollapsibleSection>}
 
-          {/* ══════ FINANZEN ══════════════════════════════════════════════ */}
-          <CollapsibleSection title="Finanzen" subtitle="Budget & Kostenplanung">
+          {/* ══════ FINANZEN (ausgeblendet) ═══════════════════════════════ */}
+          {false && <CollapsibleSection title="Finanzen" subtitle="Budget & Kostenplanung">
             <div className="bg-white rounded-xl border border-gray-200 p-5">
               {editingFinanzen ? (
                 <div className="space-y-3">
@@ -1597,7 +1767,7 @@ export default function PlanPage() {
                     <button type="button" onClick={handleSaveFinanzen} disabled={saving}
                       className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg">
                       {saving ? 'Speichern…' : 'Speichern'}</button>
-                    <button type="button" onClick={() => { setBudget2027(art.budget_2027 != null ? String(art.budget_2027) : ''); setEditingFinanzen(false) }}
+                    <button type="button" onClick={() => { setBudget2027(art?.budget_2027 != null ? String(art?.budget_2027) : ''); setEditingFinanzen(false) }}
                       className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Abbrechen</button>
                   </div>
                 </div>
@@ -1605,7 +1775,7 @@ export default function PlanPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-xs text-gray-500 mb-1">Budget 2027</p>
-                    <p className="text-xl font-bold text-gray-900">{formatCHF(art.budget_2027)}</p>
+                    <p className="text-xl font-bold text-gray-900">{formatCHF(art?.budget_2027 ?? null)}</p>
                   </div>
                   {editable && (
                     <button type="button" onClick={() => setEditingFinanzen(true)}
@@ -1614,6 +1784,90 @@ export default function PlanPage() {
                 </div>
               )}
             </div>
+          </CollapsibleSection>}
+
+          {/* ══════ OPTIONALE VERTIEFUNGEN & SPEZIFIKA ════════════════════ */}
+          <CollapsibleSection title="Optionale Vertiefung: Technologie- & Plattform-Tiefe" subtitle="Plattformarchitektur, Tool-Stack und technische Abhängigkeiten">
+            <p className="text-sm text-gray-400 italic">Noch kein Inhalt erfasst.</p>
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Optionale Vertiefung: Sourcing- & Zusammenarbeitsmodell" subtitle="Make-or-Buy, Partner, Lieferantenstruktur und Kollaborationsmodell">
+            <p className="text-sm text-gray-400 italic">Noch kein Inhalt erfasst.</p>
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Optionale Vertiefung: Skill-Matrix & Workforce (WFM)" subtitle="Kompetenzanforderungen, Lückenanalyse und Personalplanung">
+            <p className="text-sm text-gray-400 italic">Noch kein Inhalt erfasst.</p>
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Optionale Vertiefung: Ökonomie-Vorschau (qualitativ)" subtitle="Erwarteter Nutzen, Einsparpotenziale und Investitionsrahmen">
+            <p className="text-sm text-gray-400 italic">Noch kein Inhalt erfasst.</p>
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Optionale Vertiefung: Wirkungsmodell & Metriken" subtitle="Wirkungskette, KPIs und Erfolgsmessung">
+            <p className="text-sm text-gray-400 italic">Noch kein Inhalt erfasst.</p>
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Optionale Vertiefung: Governance- & Security" subtitle="Steuerungsmodell, Verantwortlichkeiten und Sicherheitsanforderungen">
+            <p className="text-sm text-gray-400 italic">Noch kein Inhalt erfasst.</p>
+          </CollapsibleSection>
+
+          <CollapsibleSection title="SES-Spezifika: Enabler-/Service-Track" subtitle="SES-spezifische Enabler, Service-Tracks und Querschnittsthemen">
+            <p className="text-sm text-gray-400 italic">Noch kein Inhalt erfasst.</p>
+          </CollapsibleSection>
+
+          <CollapsibleSection title="Qualitäts-Checkliste" subtitle="Vollständigkeit und Qualitätssicherung des Transformationsplans">
+            {checklistItems.length === 0 ? (
+              <p className="text-sm text-gray-400 italic">Noch keine Checklisten-Einträge vorhanden. Im Admin-Bereich können diese erfasst werden.</p>
+            ) : (
+              <div className="bg-white rounded-xl border border-gray-200 divide-y divide-gray-100">
+                {checklistItems.map(item => {
+                  const completion = checklistCompletions.find(c => c.checklist_item_id === item.id)
+                  const isChecked = !!completion
+                  const handleToggle = async () => {
+                    if (!art || !editable) return
+                    const newChecked = !isChecked
+                    setChecklistCompletions(prev =>
+                      newChecked
+                        ? [...prev, { id: '', art_id: art.id, checklist_item_id: item.id, completed_at: new Date().toISOString(), created_at: new Date().toISOString() }]
+                        : prev.filter(c => c.checklist_item_id !== item.id)
+                    )
+                    try {
+                      await setARTQualityChecklistCompletion(art.id, item.id, newChecked)
+                      const updated = await loadARTQualityChecklistCompletions(art.id)
+                      setChecklistCompletions(updated)
+                    } catch { loadData() }
+                  }
+                  return (
+                    <div key={item.id} className="flex items-start gap-4 px-5 py-4">
+                      <div className="flex-shrink-0 pt-0.5">
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={editable ? handleToggle : undefined}
+                          readOnly={!editable}
+                          className={`w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 ${editable ? 'cursor-pointer' : 'cursor-default'}`}
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className={`text-sm font-medium ${isChecked ? 'line-through text-gray-400' : 'text-gray-900'}`}>
+                          {item.title}
+                        </p>
+                        {item.description && (
+                          <p className="text-xs text-gray-500 mt-0.5">{item.description}</p>
+                        )}
+                      </div>
+                      {completion && (
+                        <div className="shrink-0 text-right">
+                          <span className="text-xs text-gray-400">
+                            {new Date(completion.completed_at).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </CollapsibleSection>
 
           {/* ══════ VERSIONSVERLAUF ═══════════════════════════════════════ */}
