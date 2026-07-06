@@ -3,11 +3,12 @@ import type { GetStaticProps } from 'next'
 import Head from 'next/head'
 import { AdminLayout } from '@/components/layout/AdminLayout'
 import {
-  loadAIUseCases, createAIUseCase, updateAIUseCase, deleteAIUseCase,
+  loadAllAIUseCasesAdmin, createAIUseCase, updateAIUseCase, deleteAIUseCase,
   loadCapabilities, loadAllUseCaseCapabilityLinks, saveUseCaseCapabilities,
   loadMaturityLevels, loadAllUseCaseMaturityLinks, saveUseCaseMaturityLevels,
+  loadAllARTs, loadOrganizations,
 } from '@/lib/supabase'
-import type { AIUseCase, AIUseCaseStatus, BizDevOpsCapability, MaturityLevel } from '@/types/database'
+import type { AIUseCase, AIUseCaseStatus, ART, BizDevOpsCapability, MaturityLevel, Organization } from '@/types/database'
 
 export const getStaticProps: GetStaticProps = async () => ({ props: {} })
 
@@ -34,6 +35,8 @@ export default function AIUseCasesPage() {
   const [useCases, setUseCases] = useState<AIUseCase[]>([])
   const [capabilities, setCapabilities] = useState<BizDevOpsCapability[]>([])
   const [maturityLevels, setMaturityLevels] = useState<MaturityLevel[]>([])
+  const [allArts, setAllArts] = useState<ART[]>([])
+  const [orgs, setOrgs] = useState<Organization[]>([])
   const [capLinks, setCapLinks] = useState<Record<string, CapEntry[]>>({})
   const [maturityLinks, setMaturityLinks] = useState<Record<string, string[]>>({})
   const [loading, setLoading] = useState(true)
@@ -60,11 +63,13 @@ export default function AIUseCasesPage() {
 
   const loadData = () => {
     Promise.all([
-      loadAIUseCases(), loadCapabilities(), loadMaturityLevels(),
+      loadAllAIUseCasesAdmin(), loadCapabilities(), loadMaturityLevels(),
       loadAllUseCaseCapabilityLinks(), loadAllUseCaseMaturityLinks(),
+      loadAllARTs(), loadOrganizations(),
     ])
-      .then(([uc, caps, ml, capLinksList, matLinksList]) => {
+      .then(([uc, caps, ml, capLinksList, matLinksList, arts, organizations]) => {
         setUseCases(uc); setCapabilities(caps); setMaturityLevels(ml)
+        setAllArts(arts); setOrgs(organizations)
         const capMap: Record<string, CapEntry[]> = {}
         capLinksList.forEach(l => {
           if (!capMap[l.use_case_id]) capMap[l.use_case_id] = []
@@ -152,6 +157,14 @@ export default function AIUseCasesPage() {
     catch { setError('Fehler beim Löschen. Möglicherweise wird der Use Case noch in einem Transformationsplan verwendet.') }
   }
 
+  const handlePromoteToOfficial = async (uc: AIUseCase) => {
+    if (!confirm(`Lokalen Use Case «${uc.title}» zum offiziellen Use Case hochstufen? Er wird dann für alle ARTs sichtbar.`)) return
+    try {
+      await updateAIUseCase(uc.id, { type: 'official', art_id: null })
+      loadData()
+    } catch { setError('Fehler beim Hochstufen.') }
+  }
+
   const capName = (id: string) => capabilities.find(c => c.id === id)?.name ?? '–'
   const capColor = (id: string) => capabilities.find(c => c.id === id)?.color ?? '#6366f1'
 
@@ -228,6 +241,112 @@ export default function AIUseCasesPage() {
     </div>
   )
 
+  const renderUcCard = (uc: AIUseCase) => (
+    <div key={uc.id} className="bg-white rounded-xl border border-gray-200 p-4">
+      {editId === uc.id ? (
+        <div className="space-y-3">
+          <input aria-label="Titel" value={editTitle} onChange={e => setEditTitle(e.target.value)}
+            className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
+          <textarea aria-label="Kurzbeschreibung" value={editDesc} onChange={e => setEditDesc(e.target.value)} rows={2}
+            className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
+          <input aria-label="Link" value={editLink} onChange={e => setEditLink(e.target.value)} placeholder="https://…"
+            className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label htmlFor={`edit-status-${uc.id}`} className="block text-xs font-medium text-gray-600 mb-1">Status</label>
+              <select id={`edit-status-${uc.id}`} value={editStatus} onChange={e => setEditStatus(e.target.value as AIUseCaseStatus | '')}
+                className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-brand-500">
+                <option value="">– Kein Status –</option>
+                {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+            <div>
+              <label htmlFor={`edit-avail-${uc.id}`} className="block text-xs font-medium text-gray-600 mb-1">Geplante Verfügbarkeit ab</label>
+              <input id={`edit-avail-${uc.id}`} type="date" value={editAvailableFrom} onChange={e => setEditAvailableFrom(e.target.value)}
+                className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
+            </div>
+          </div>
+          {renderCapabilitySelector(editCaps, setEditCaps, `edit-${uc.id}`)}
+          {renderMaturitySelector(editMaturity, setEditMaturity)}
+          <div className="flex gap-2">
+            <button type="button" onClick={() => handleUpdate(uc.id)} className="text-sm text-brand-600 hover:text-brand-700 font-medium">Speichern</button>
+            <button type="button" onClick={() => setEditId(null)} className="text-sm text-gray-500">Abbrechen</button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-start justify-between">
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-semibold text-gray-900">{uc.title}</span>
+              {uc.type === 'local' && (
+                <span className="text-[9px] px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded-full font-medium">lokal</span>
+              )}
+              {uc.status && (
+                <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[uc.status]}`}>{uc.status}</span>
+              )}
+              {uc.link && (
+                <a href={uc.link} target="_blank" rel="noopener noreferrer" className="text-xs text-brand-600 hover:text-brand-700">
+                  Link ↗
+                </a>
+              )}
+            </div>
+            {uc.available_from && (
+              <p className="text-xs text-gray-500 mt-0.5">
+                Verfügbar ab: {new Date(uc.available_from).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+              </p>
+            )}
+            {uc.description && <p className="text-xs text-gray-500 mt-1">{uc.description}</p>}
+            {(maturityLinks[uc.id] ?? []).length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {(maturityLinks[uc.id] ?? []).map(mlId => {
+                  const ml = maturityLevels.find(m => m.id === mlId)
+                  if (!ml) return null
+                  return (
+                    <span key={mlId} className="inline-block px-2 py-0.5 bg-brand-100 text-brand-700 text-[10px] font-bold rounded">
+                      {ml.code}
+                    </span>
+                  )
+                })}
+              </div>
+            )}
+            {(capLinks[uc.id] ?? []).length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {(capLinks[uc.id] ?? []).map(entry => (
+                  <span key={entry.capability_id} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: capColor(entry.capability_id) }} />
+                    {capName(entry.capability_id)}
+                    {entry.efficiency_potential && <span className="ml-1 text-gray-400">{entry.efficiency_potential}%</span>}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-3 shrink-0 ml-4">
+            {uc.type === 'local' && (
+              <button type="button" onClick={() => handlePromoteToOfficial(uc)} className="text-xs text-green-600 hover:text-green-700 font-medium">
+                ↑ Offiziell machen
+              </button>
+            )}
+            <button type="button" onClick={() => startEdit(uc)} className="text-xs text-brand-600 hover:text-brand-700">Bearbeiten</button>
+            <button type="button" onClick={() => handleDelete(uc)} className="text-xs text-red-400 hover:text-red-600">Löschen</button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+
+  const officialUCs = useCases.filter(uc => uc.type === 'official')
+  const localUCs = useCases.filter(uc => uc.type === 'local')
+
+  // Group local UCs by organization name
+  const localByOrg: Record<string, AIUseCase[]> = {}
+  localUCs.forEach(uc => {
+    const art = allArts.find(a => a.id === uc.art_id)
+    const org = orgs.find(o => o.id === art?.org_id)
+    const key = org?.name ?? 'Unbekannte AO'
+    localByOrg[key] = [...(localByOrg[key] ?? []), uc]
+  })
+
   return (
     <>
       <Head><title>AI Use Cases – AI@DZ</title></Head>
@@ -285,97 +404,45 @@ export default function AIUseCasesPage() {
 
         {error && <p className="text-red-600 text-sm mb-4">{error}</p>}
 
-        {loading ? <p className="text-gray-400 text-sm">Lädt…</p> : useCases.length === 0 ? (
-          <div className="bg-white rounded-xl border border-gray-200 p-8 text-center">
-            <p className="text-gray-500 text-sm">Noch keine AI Use Cases vorhanden.</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {useCases.map(uc => (
-              <div key={uc.id} className="bg-white rounded-xl border border-gray-200 p-4">
-                {editId === uc.id ? (
-                  <div className="space-y-3">
-                    <input aria-label="Titel" value={editTitle} onChange={e => setEditTitle(e.target.value)}
-                      className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
-                    <textarea aria-label="Kurzbeschreibung" value={editDesc} onChange={e => setEditDesc(e.target.value)} rows={2}
-                      className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
-                    <input aria-label="Link" value={editLink} onChange={e => setEditLink(e.target.value)} placeholder="https://…"
-                      className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label htmlFor={`edit-status-${uc.id}`} className="block text-xs font-medium text-gray-600 mb-1">Status</label>
-                        <select id={`edit-status-${uc.id}`} value={editStatus} onChange={e => setEditStatus(e.target.value as AIUseCaseStatus | '')}
-                          className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-brand-500">
-                          <option value="">– Kein Status –</option>
-                          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
+        {loading ? <p className="text-gray-400 text-sm">Lädt…</p> : (
+          <div className="space-y-6">
+            {/* Offizielle Use Cases */}
+            <div>
+              <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                Offizielle Use Cases <span className="ml-1 font-normal normal-case text-gray-400">({officialUCs.length})</span>
+              </h2>
+              {officialUCs.length === 0 ? (
+                <div className="bg-white rounded-xl border border-gray-200 p-6 text-center">
+                  <p className="text-gray-500 text-sm">Noch keine offiziellen AI Use Cases vorhanden.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {officialUCs.map(uc => renderUcCard(uc))}
+                </div>
+              )}
+            </div>
+
+            {/* Lokale Use Cases (nach AO gruppiert) */}
+            {localUCs.length > 0 && (
+              <div>
+                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">
+                  Lokale Use Cases <span className="ml-1 font-normal normal-case text-gray-400">({localUCs.length})</span>
+                </h2>
+                <div className="space-y-6">
+                  {Object.entries(localByOrg).sort(([a], [b]) => a.localeCompare(b, 'de')).map(([orgName, ucs]) => (
+                    <div key={orgName}>
+                      <h3 className="text-xs font-semibold text-orange-600 mb-2 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-orange-400 inline-block" />
+                        {orgName} <span className="font-normal text-gray-400">({ucs.length})</span>
+                      </h3>
+                      <div className="space-y-2">
+                        {ucs.map(uc => renderUcCard(uc))}
                       </div>
-                      <div>
-                        <label htmlFor={`edit-avail-${uc.id}`} className="block text-xs font-medium text-gray-600 mb-1">Geplante Verfügbarkeit ab</label>
-                        <input id={`edit-avail-${uc.id}`} type="date" value={editAvailableFrom} onChange={e => setEditAvailableFrom(e.target.value)}
-                          className="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
-                      </div>
                     </div>
-                    {renderCapabilitySelector(editCaps, setEditCaps, `edit-${uc.id}`)}
-                    {renderMaturitySelector(editMaturity, setEditMaturity)}
-                    <div className="flex gap-2">
-                      <button type="button" onClick={() => handleUpdate(uc.id)} className="text-sm text-brand-600 hover:text-brand-700 font-medium">Speichern</button>
-                      <button type="button" onClick={() => setEditId(null)} className="text-sm text-gray-500">Abbrechen</button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold text-gray-900">{uc.title}</span>
-                        {uc.status && (
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${STATUS_BADGE[uc.status]}`}>{uc.status}</span>
-                        )}
-                        {uc.link && (
-                          <a href={uc.link} target="_blank" rel="noopener noreferrer" className="text-xs text-brand-600 hover:text-brand-700">
-                            Link ↗
-                          </a>
-                        )}
-                      </div>
-                      {uc.available_from && (
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          Verfügbar ab: {new Date(uc.available_from).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                        </p>
-                      )}
-                      {uc.description && <p className="text-xs text-gray-500 mt-1">{uc.description}</p>}
-                      {(maturityLinks[uc.id] ?? []).length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mt-2">
-                          {(maturityLinks[uc.id] ?? []).map(mlId => {
-                            const ml = maturityLevels.find(m => m.id === mlId)
-                            if (!ml) return null
-                            return (
-                              <span key={mlId} className="inline-block px-2 py-0.5 bg-brand-100 text-brand-700 text-[10px] font-bold rounded">
-                                {ml.code}
-                              </span>
-                            )
-                          })}
-                        </div>
-                      )}
-                      {(capLinks[uc.id] ?? []).length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mt-2">
-                          {(capLinks[uc.id] ?? []).map(entry => (
-                            <span key={entry.capability_id} className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
-                              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: capColor(entry.capability_id) }} />
-                              {capName(entry.capability_id)}
-                              {entry.efficiency_potential && <span className="ml-1 text-gray-400">{entry.efficiency_potential}%</span>}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0 ml-4">
-                      <button type="button" onClick={() => startEdit(uc)} className="text-xs text-brand-600 hover:text-brand-700">Bearbeiten</button>
-                      <button type="button" onClick={() => handleDelete(uc)} className="text-xs text-red-400 hover:text-red-600">Löschen</button>
-                    </div>
-                  </div>
-                )}
+                  ))}
+                </div>
               </div>
-            ))}
+            )}
           </div>
         )}
       </AdminLayout>

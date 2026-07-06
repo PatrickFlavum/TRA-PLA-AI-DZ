@@ -7,7 +7,7 @@ import type {
   ARTUseCaseRating, BusinessDivision,
   QualityChecklistItem, ARTQualityChecklistCompletion,
   ARTStandortbestimmung, StandortbestimmungColor,
-  StandortbestimmungDimension,
+  StandortbestimmungDimension, ARTTimelineEntry,
 } from '@/types/database'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -137,6 +137,15 @@ export async function deleteOrganization(id: string): Promise<void> {
 }
 
 // ─── ARTs ─────────────────────────────────────────────────────────────────────
+
+export async function loadAllARTs(): Promise<ART[]> {
+  const { data, error } = await supabase
+    .from('arts')
+    .select('*')
+    .order('name')
+  if (error) throw error
+  return (data ?? []) as ART[]
+}
 
 export async function loadARTs(orgId: string): Promise<ART[]> {
   const { data, error } = await supabase
@@ -621,6 +630,29 @@ export async function loadAIUseCases(): Promise<AIUseCase[]> {
   return (data ?? []) as AIUseCase[]
 }
 
+export async function loadAIUseCasesForPlan(artId: string): Promise<AIUseCase[]> {
+  // Try filtered query (requires type + art_id columns); fall back if migration not yet applied
+  const { data: probe, error: probeErr } = await supabase
+    .from('ai_use_cases').select('*').eq('type', 'official').order('sort_order')
+  if (probeErr) {
+    const { data, error } = await supabase.from('ai_use_cases').select('*').order('sort_order')
+    if (error) throw error
+    return (data ?? []) as AIUseCase[]
+  }
+  const { data: local } = await supabase
+    .from('ai_use_cases').select('*').eq('type', 'local').eq('art_id', artId)
+  return [...(probe ?? []), ...(local ?? [])] as AIUseCase[]
+}
+
+export async function loadAllAIUseCasesAdmin(): Promise<AIUseCase[]> {
+  const { data, error } = await supabase
+    .from('ai_use_cases')
+    .select('*')
+    .order('sort_order')
+  if (error) throw error
+  return (data ?? []) as AIUseCase[]
+}
+
 export async function createAIUseCase(
   params: Pick<AIUseCase, 'title' | 'description' | 'link' | 'status' | 'available_from'>
 ): Promise<AIUseCase> {
@@ -643,7 +675,7 @@ export async function createAIUseCase(
 
 export async function updateAIUseCase(
   id: string,
-  params: Partial<Pick<AIUseCase, 'title' | 'description' | 'link' | 'status' | 'available_from'>>
+  params: Partial<Pick<AIUseCase, 'title' | 'description' | 'link' | 'status' | 'available_from' | 'type' | 'art_id'>>
 ): Promise<void> {
   const { error } = await supabase
     .from('ai_use_cases')
@@ -658,6 +690,26 @@ export async function deleteAIUseCase(id: string): Promise<void> {
     .delete()
     .eq('id', id)
   if (error) throw error
+}
+
+export async function createLocalAIUseCase(
+  artId: string,
+  params: Pick<AIUseCase, 'title' | 'description' | 'link' | 'status' | 'available_from'>
+): Promise<AIUseCase> {
+  const { data: maxData } = await supabase
+    .from('ai_use_cases')
+    .select('sort_order')
+    .order('sort_order', { ascending: false })
+    .limit(1)
+    .single()
+  const sort_order = (maxData?.sort_order ?? 0) + 1
+  const { data, error } = await supabase
+    .from('ai_use_cases')
+    .insert({ ...params, type: 'local', art_id: artId, sort_order })
+    .select()
+    .single()
+  if (error) throw error
+  return data as AIUseCase
 }
 
 // ─── AI Use Case ↔ Capability Links (with efficiency potential) ──────────
@@ -952,6 +1004,40 @@ export async function updateStandortbestimmungDimension(
 export async function deleteStandortbestimmungDimension(id: string): Promise<void> {
   const { error } = await supabase
     .from('standortbestimmung_dimensionen')
+    .delete()
+    .eq('id', id)
+  if (error) throw error
+}
+
+// ─── ART Timeline Entries ─────────────────────────────────────────────────
+
+export async function loadARTTimelineEntries(artId: string): Promise<ARTTimelineEntry[]> {
+  const { data, error } = await supabase
+    .from('art_timeline_entries')
+    .select('*')
+    .eq('art_id', artId)
+    .order('date_from')
+    .order('date_until')
+  if (error) throw error
+  return (data ?? []) as ARTTimelineEntry[]
+}
+
+export async function createARTTimelineEntry(
+  artId: string,
+  params: { title: string; date_from: string; date_until: string }
+): Promise<ARTTimelineEntry> {
+  const { data, error } = await supabase
+    .from('art_timeline_entries')
+    .insert({ art_id: artId, ...params })
+    .select()
+    .single()
+  if (error) throw error
+  return data as ARTTimelineEntry
+}
+
+export async function deleteARTTimelineEntry(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('art_timeline_entries')
     .delete()
     .eq('id', id)
   if (error) throw error

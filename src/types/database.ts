@@ -121,6 +121,8 @@ export type AIUseCase = {
   link: string | null
   status: AIUseCaseStatus | null
   available_from: string | null
+  type: 'official' | 'local'
+  art_id: string | null
   sort_order: number
   created_at: string
 }
@@ -203,5 +205,14 @@ export type ARTStandortbestimmung = {
   dimension_key: string
   color: StandortbestimmungColor | null
   reason: string | null
+  created_at: string
+}
+
+export type ARTTimelineEntry = {
+  id: string
+  art_id: string
+  title: string
+  date_from: string
+  date_until: string
   created_at: string
 }

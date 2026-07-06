@@ -154,6 +154,18 @@ create table if not exists ai_use_cases (
 -- Nachträglich hinzugefügte Spalten (für bestehende Datenbanken)
 alter table ai_use_cases add column if not exists status         text;
 alter table ai_use_cases add column if not exists available_from date;
+alter table ai_use_cases add column if not exists type           text not null default 'official';
+alter table ai_use_cases add column if not exists art_id         uuid references arts(id) on delete cascade;
+
+do $$ begin
+  if not exists (
+    select 1 from pg_constraint
+    where conrelid = 'ai_use_cases'::regclass and conname = 'ai_use_cases_type_check'
+  ) then
+    alter table ai_use_cases add constraint ai_use_cases_type_check
+      check (type in ('official', 'local'));
+  end if;
+end $$;
 
 -- Status-Umbenennung (idempotent via WHERE-Bedingung)
 alter table ai_use_cases drop constraint if exists ai_use_cases_status_check;
@@ -403,6 +415,19 @@ create table if not exists art_standortbestimmung (
 
 create index if not exists idx_art_standortbestimmung_art on art_standortbestimmung(art_id);
 
+-- ─── ART Timeline Entries (custom milestones/phases in Gantt) ────────────
+
+create table if not exists art_timeline_entries (
+  id         uuid        primary key default uuid_generate_v4(),
+  art_id     uuid        not null references arts(id) on delete cascade,
+  title      text        not null,
+  date_from  date        not null,
+  date_until date        not null,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_art_timeline_entries_art on art_timeline_entries(art_id);
+
 -- ─── Row Level Security ───────────────────────────────────────────────────
 
 alter table business_divisions              enable row level security;
@@ -451,6 +476,7 @@ do $$ begin
   drop policy if exists "auth_all" on art_quality_checklist_completions;
   drop policy if exists "auth_all" on standortbestimmung_dimensionen;
   drop policy if exists "auth_all" on art_standortbestimmung;
+  drop policy if exists "auth_all" on art_timeline_entries;
 end $$;
 
 create policy "auth_all" on business_divisions              for all using (true) with check (true);
@@ -474,3 +500,4 @@ create policy "auth_all" on quality_checklist_items        for all using (true) 
 create policy "auth_all" on art_quality_checklist_completions for all using (true) with check (true);
 create policy "auth_all" on standortbestimmung_dimensionen   for all using (true) with check (true);
 create policy "auth_all" on art_standortbestimmung           for all using (true) with check (true);
+create policy "auth_all" on art_timeline_entries             for all using (true) with check (true);

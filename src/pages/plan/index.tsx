@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+﻿import { useEffect, useState, useCallback, Fragment } from 'react'
 import type { GetStaticProps } from 'next'
 import Head from 'next/head'
 import { useRouter } from 'next/router'
@@ -14,7 +14,9 @@ import {
   loadAllTeamMembers, createTeamMember, deleteTeamMember,
   loadAllTeamAllocations, saveTeamAllocations,
   loadEmployeeRoles, loadCapabilities, loadGuidanceModes,
-  loadAIUseCases, loadAllUseCaseCapabilityLinks,
+  loadAIUseCasesForPlan, loadAllUseCaseCapabilityLinks,
+  createLocalAIUseCase, updateAIUseCase, deleteAIUseCase,
+  saveUseCaseCapabilities, saveUseCaseMaturityLevels,
   loadARTUseCases, addUseCaseToART, removeUseCaseFromART, upsertARTUseCaseStatus,
   loadARTUseCaseDates, upsertARTUseCaseDateRow, deleteARTUseCaseDateRows,
   loadMaturityLevels, loadAllUseCaseMaturityLinks,
@@ -24,6 +26,7 @@ import {
   setARTQualityChecklistCompletion,
   loadARTStandortbestimmung, upsertARTStandortbestimmung,
   loadStandortbestimmungDimensionen,
+  loadARTTimelineEntries, createARTTimelineEntry, deleteARTTimelineEntry,
 } from '@/lib/supabase'
 import type {
   ART, Organization, PlanVersion, Team, TeamMember,
@@ -33,12 +36,20 @@ import type {
   CyberCriticality, ARTUseCaseRating, BusinessDivision,
   QualityChecklistItem, ARTQualityChecklistCompletion,
   ARTStandortbestimmung, StandortbestimmungColor,
-  StandortbestimmungDimension,
+  StandortbestimmungDimension, ARTTimelineEntry,
 } from '@/types/database'
 
 export const getStaticProps: GetStaticProps = async () => ({ props: {} })
 
 type TeamData = { team: Team; members: TeamMember[]; allocations: Record<string, number> }
+
+type LocalCapEntry = { capability_id: string; efficiency_potential: string }
+function parseLocalCaps(entries: LocalCapEntry[]) {
+  return entries.map(e => ({
+    capability_id: e.capability_id,
+    efficiency_potential: e.efficiency_potential.trim() ? parseInt(e.efficiency_potential, 10) : null,
+  }))
+}
 
 type SummaryRow = {
   roleName: string
@@ -82,7 +93,7 @@ function SummaryTable({ rows, totals }: { rows: SummaryRow[]; totals: ReturnType
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
         <thead>
-          <tr className="text-left text-gray-500 border-b border-gray-200">
+          <tr className="text-left text-gray-600 border-b border-gray-200">
             <th className="pb-2 font-medium">Rolle</th>
             <th className="pb-2 font-medium text-center" colSpan={2}>Intern</th>
             <th className="pb-2 font-medium text-center" colSpan={2}>Extern</th>
@@ -182,6 +193,10 @@ export default function PlanPage() {
 
   const [editingIntro, setEditingIntro] = useState(false)
   const [editingTeamId, setEditingTeamId] = useState<string | null>(null)
+  const [expandedTeamIds, setExpandedTeamIds] = useState<Set<string>>(new Set())
+  const toggleTeamExpand = (id: string) => setExpandedTeamIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const [expandedUseCaseIds, setExpandedUseCaseIds] = useState<Set<string>>(new Set())
+  const toggleUseCaseExpand = (id: string) => setExpandedUseCaseIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   const [editingFinanzen, setEditingFinanzen] = useState(false)
   const [editingUseCaseId, setEditingUseCaseId] = useState<string | null>(null)
   const [showAddUseCase, setShowAddUseCase] = useState(false)
@@ -207,6 +222,31 @@ export default function PlanPage() {
   const [showNewTeam, setShowNewTeam] = useState(false)
   const [newTeamName, setNewTeamName] = useState('')
   const [newTeamDesc, setNewTeamDesc] = useState('')
+
+  // Local UC management
+  const [showLocalUcModal, setShowLocalUcModal] = useState(false)
+  const [newLocalUcTitle, setNewLocalUcTitle] = useState('')
+  const [newLocalUcDesc, setNewLocalUcDesc] = useState('')
+  const [newLocalUcLink, setNewLocalUcLink] = useState('')
+  const [newLocalUcStatus, setNewLocalUcStatus] = useState<AIUseCaseStatus | ''>('')
+  const [newLocalUcAvailFrom, setNewLocalUcAvailFrom] = useState('')
+  const [newLocalUcCaps, setNewLocalUcCaps] = useState<LocalCapEntry[]>([])
+  const [newLocalUcMaturity, setNewLocalUcMaturity] = useState<string[]>([])
+  const [editingLocalUcId, setEditingLocalUcId] = useState<string | null>(null)
+  const [editLocalUcTitle, setEditLocalUcTitle] = useState('')
+  const [editLocalUcDesc, setEditLocalUcDesc] = useState('')
+  const [editLocalUcLink, setEditLocalUcLink] = useState('')
+  const [editLocalUcStatus, setEditLocalUcStatus] = useState<AIUseCaseStatus | ''>('')
+  const [editLocalUcAvailFrom, setEditLocalUcAvailFrom] = useState('')
+  const [editLocalUcCaps, setEditLocalUcCaps] = useState<LocalCapEntry[]>([])
+  const [editLocalUcMaturity, setEditLocalUcMaturity] = useState<string[]>([])
+
+  // Timeline entries
+  const [timelineEntries, setTimelineEntries] = useState<ARTTimelineEntry[]>([])
+  const [showTimelineModal, setShowTimelineModal] = useState(false)
+  const [tlTitle, setTlTitle] = useState('')
+  const [tlFrom, setTlFrom] = useState('')
+  const [tlUntil, setTlUntil] = useState('')
 
   const isDraft = latestVersion?.status === 'draft'
   const editable = canEdit && isDraft
@@ -248,7 +288,7 @@ export default function PlanPage() {
       const [o, v, teams, r, c, gm, uc, ucLinks, ucMatLinks, ml, auc, aucDates, ratings, divs] = await Promise.all([
         loadOrganization(a.org_id), loadPlanVersions(a.id), loadTeams(a.id),
         loadEmployeeRoles(), loadCapabilities(), loadGuidanceModes(),
-        loadAIUseCases(), loadAllUseCaseCapabilityLinks(), loadAllUseCaseMaturityLinks(),
+        loadAIUseCasesForPlan(a.id), loadAllUseCaseCapabilityLinks(), loadAllUseCaseMaturityLinks(),
         loadMaturityLevels(), loadARTUseCases(a.id), loadARTUseCaseDates(a.id),
         loadARTUseCaseRatings(a.id), loadBusinessDivisions(),
       ])
@@ -260,16 +300,18 @@ export default function PlanPage() {
       setArtUseCaseRatings(ratings); setBusinessDivisions(divs)
 
       // Optionale Tabellen – laden fehlertolerant damit fehlende DB-Tabellen die Seite nicht blockieren
-      const [qcItems, qcCompletions, sb, sbDims] = await Promise.all([
+      const [qcItems, qcCompletions, sb, sbDims, tlEntries] = await Promise.all([
         loadQualityChecklistItems().catch(() => []),
         loadARTQualityChecklistCompletions(a.id).catch(() => []),
         loadARTStandortbestimmung(a.id).catch(() => []),
         loadStandortbestimmungDimensionen().catch(() => []),
+        loadARTTimelineEntries(a.id).catch(() => []),
       ])
       setChecklistItems(qcItems)
       setChecklistCompletions(qcCompletions)
       setStandortbestimmung(sb)
       setSbDimensions(sbDims)
+      setTimelineEntries(tlEntries)
 
       const teamIds = teams.map(t => t.id)
       const [allMembers, allAllocs] = await Promise.all([loadAllTeamMembers(teamIds), loadAllTeamAllocations(teamIds)])
@@ -435,6 +477,91 @@ export default function PlanPage() {
 
   const handleDeleteMember = async (memberId: string) => {
     try { await deleteTeamMember(memberId); loadData() } catch { setError('Fehler beim Löschen.') }
+  }
+
+  const handleCreateLocalUc = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!art || !newLocalUcTitle.trim()) return
+    setSaving(true)
+    try {
+      const uc = await createLocalAIUseCase(art.id, {
+        title: newLocalUcTitle.trim(),
+        description: newLocalUcDesc.trim() || null,
+        link: newLocalUcLink.trim() || null,
+        status: (newLocalUcStatus as AIUseCaseStatus) || null,
+        available_from: newLocalUcAvailFrom || null,
+      })
+      await Promise.all([
+        saveUseCaseCapabilities(uc.id, parseLocalCaps(newLocalUcCaps)),
+        saveUseCaseMaturityLevels(uc.id, newLocalUcMaturity),
+      ])
+      setNewLocalUcTitle(''); setNewLocalUcDesc(''); setNewLocalUcLink('')
+      setNewLocalUcStatus(''); setNewLocalUcAvailFrom(''); setNewLocalUcCaps([]); setNewLocalUcMaturity([])
+      setShowLocalUcModal(false)
+      await loadData()
+    } catch { /* silent */ }
+    finally { setSaving(false) }
+  }
+
+  const startEditLocalUc = (uc: AIUseCase) => {
+    setEditingLocalUcId(uc.id)
+    setEditLocalUcTitle(uc.title)
+    setEditLocalUcDesc(uc.description ?? '')
+    setEditLocalUcLink(uc.link ?? '')
+    setEditLocalUcStatus(uc.status ?? '')
+    setEditLocalUcAvailFrom(uc.available_from ?? '')
+    setEditLocalUcCaps(
+      useCaseCapLinks
+        .filter(l => l.use_case_id === uc.id)
+        .map(l => ({ capability_id: l.capability_id, efficiency_potential: l.efficiency_potential != null ? String(l.efficiency_potential) : '' }))
+    )
+    setEditLocalUcMaturity(useCaseMaturityLinks.filter(l => l.use_case_id === uc.id).map(l => l.maturity_level_id))
+  }
+
+  const handleUpdateLocalUc = async (id: string) => {
+    if (!editLocalUcTitle.trim()) return
+    try {
+      await updateAIUseCase(id, {
+        title: editLocalUcTitle.trim(),
+        description: editLocalUcDesc.trim() || null,
+        link: editLocalUcLink.trim() || null,
+        status: (editLocalUcStatus as AIUseCaseStatus) || null,
+        available_from: editLocalUcAvailFrom || null,
+      })
+      await Promise.all([
+        saveUseCaseCapabilities(id, parseLocalCaps(editLocalUcCaps)),
+        saveUseCaseMaturityLevels(id, editLocalUcMaturity),
+      ])
+      setShowLocalUcModal(false)
+      setEditingLocalUcId(null)
+      await loadData()
+    } catch { /* silent */ }
+  }
+
+  const handleDeleteLocalUc = async (uc: AIUseCase) => {
+    if (!confirm(`Lokalen Use Case «${uc.title}» löschen?`)) return
+    try {
+      await deleteAIUseCase(uc.id)
+      setUseCases(prev => prev.filter(u => u.id !== uc.id))
+    } catch { /* silent */ }
+  }
+
+  const handleCreateTimelineEntry = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!art || !tlTitle.trim() || !tlFrom || !tlUntil) return
+    try {
+      const entry = await createARTTimelineEntry(art.id, { title: tlTitle.trim(), date_from: tlFrom, date_until: tlUntil })
+      setTimelineEntries(prev => [...prev, entry].sort((a, b) => a.date_from < b.date_from ? -1 : a.date_from > b.date_from ? 1 : a.date_until < b.date_until ? -1 : 1))
+      setTlTitle(''); setTlFrom(''); setTlUntil(''); setShowTimelineModal(false)
+    } catch { /* silent */ }
+  }
+
+  const handleDeleteTimelineEntry = async (id: string, title: string) => {
+    if (!confirm(`Eintrag «${title}» löschen?`)) return
+    try {
+      await deleteARTTimelineEntry(id)
+      setTimelineEntries(prev => prev.filter(e => e.id !== id))
+    } catch { /* silent */ }
   }
 
   const handleAllocChange = (teamId: string, capId: string, value: number) => {
@@ -634,8 +761,17 @@ export default function PlanPage() {
               <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[80vh] overflow-y-auto">
                 <div className="flex items-start justify-between mb-4">
                   <h3 className="text-lg font-bold text-gray-900 pr-4">{uc.title}</h3>
-                  <button type="button" onClick={() => setDetailUseCaseId(null)}
-                    className="text-gray-400 hover:text-gray-600 text-xl leading-none shrink-0">×</button>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {uc.type === 'local' && canEdit && (
+                      <button type="button"
+                        onClick={() => { startEditLocalUc(uc); setDetailUseCaseId(null); setShowLocalUcModal(true) }}
+                        className="text-sm text-brand-600 hover:text-brand-700 font-medium">
+                        Bearbeiten
+                      </button>
+                    )}
+                    <button type="button" onClick={() => setDetailUseCaseId(null)}
+                      className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+                  </div>
                 </div>
                 {uc.description && <p className="text-sm text-gray-700 mb-4">{uc.description}</p>}
                 <div className="space-y-3">
@@ -647,7 +783,7 @@ export default function PlanPage() {
                         </span>
                       )}
                       {uc.available_from && (
-                        <span className="text-xs text-gray-500">Verfügbar ab: {fmtDate(uc.available_from)}</span>
+                        <span className="text-xs text-gray-600">Verfügbar ab: {fmtDate(uc.available_from)}</span>
                       )}
                     </div>
                   )}
@@ -697,6 +833,188 @@ export default function PlanPage() {
           )
         })()}
 
+        {/* Local UC Create/Edit Modal */}
+        {showLocalUcModal && art && (() => {
+          const isEdit = editingLocalUcId !== null
+          const STATUS_OPTIONS_LOCAL: AIUseCaseStatus[] = ['In Backlog', 'In Lösungsexploration', 'In Entwicklung', 'Im Rollout', 'In Betrieb', 'Abgebrochen']
+          const title = isEdit ? editLocalUcTitle : newLocalUcTitle
+          const setTitle = isEdit ? setEditLocalUcTitle : setNewLocalUcTitle
+          const desc = isEdit ? editLocalUcDesc : newLocalUcDesc
+          const setDesc = isEdit ? setEditLocalUcDesc : setNewLocalUcDesc
+          const link = isEdit ? editLocalUcLink : newLocalUcLink
+          const setLink = isEdit ? setEditLocalUcLink : setNewLocalUcLink
+          const status = isEdit ? editLocalUcStatus : newLocalUcStatus
+          const setStatus = isEdit ? setEditLocalUcStatus : setNewLocalUcStatus
+          const availFrom = isEdit ? editLocalUcAvailFrom : newLocalUcAvailFrom
+          const setAvailFrom = isEdit ? setEditLocalUcAvailFrom : setNewLocalUcAvailFrom
+          const caps = isEdit ? editLocalUcCaps : newLocalUcCaps
+          const setCaps = isEdit ? setEditLocalUcCaps : setNewLocalUcCaps
+          const maturity = isEdit ? editLocalUcMaturity : newLocalUcMaturity
+          const setMaturity = isEdit ? setEditLocalUcMaturity : setNewLocalUcMaturity
+
+          const toggleCap = (capId: string) =>
+            setCaps(prev => prev.some(e => e.capability_id === capId)
+              ? prev.filter(e => e.capability_id !== capId)
+              : [...prev, { capability_id: capId, efficiency_potential: '' }])
+          const updateCapEff = (capId: string, val: string) =>
+            setCaps(prev => prev.map(e => e.capability_id === capId ? { ...e, efficiency_potential: val } : e))
+          const toggleMat = (id: string) =>
+            setMaturity(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+
+          const handleSubmit = (e: React.FormEvent) => {
+            e.preventDefault()
+            if (isEdit) {
+              handleUpdateLocalUc(editingLocalUcId!)
+            } else {
+              handleCreateLocalUc(e)
+            }
+          }
+
+          return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 no-print p-4"
+              onClick={e => { if (e.target === e.currentTarget) setShowLocalUcModal(false) }}>
+              <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[85vh] overflow-y-auto">
+                <div className="flex items-start justify-between mb-4">
+                  <h3 className="text-lg font-bold text-gray-900">
+                    {isEdit ? 'Lokalen Use Case bearbeiten' : 'Lokalen Use Case erfassen'}
+                  </h3>
+                  <button type="button" onClick={() => setShowLocalUcModal(false)}
+                    className="text-gray-400 hover:text-gray-600 text-xl leading-none shrink-0">×</button>
+                </div>
+                <form onSubmit={handleSubmit} className="space-y-3">
+                  <div>
+                    <label htmlFor="luc-title" className="block text-xs font-medium text-gray-600 mb-1">Titel *</label>
+                    <input id="luc-title" type="text" value={title} onChange={e => setTitle(e.target.value)} required
+                      placeholder="z.B. Automatische Protokollierung"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                  </div>
+                  <div>
+                    <label htmlFor="luc-desc" className="block text-xs font-medium text-gray-600 mb-1">Kurzbeschreibung</label>
+                    <textarea id="luc-desc" value={desc} onChange={e => setDesc(e.target.value)} rows={2}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                  </div>
+                  <div>
+                    <label htmlFor="luc-link" className="block text-xs font-medium text-gray-600 mb-1">Link auf weiterführende Informationen</label>
+                    <input id="luc-link" type="url" value={link} onChange={e => setLink(e.target.value)}
+                      placeholder="https://…" className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label htmlFor="luc-status" className="block text-xs font-medium text-gray-600 mb-1">Status</label>
+                      <select id="luc-status" value={status} onChange={e => setStatus(e.target.value as AIUseCaseStatus | '')}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                        <option value="">– Kein Status –</option>
+                        {STATUS_OPTIONS_LOCAL.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                    <div>
+                      <label htmlFor="luc-avail" className="block text-xs font-medium text-gray-600 mb-1">Verfügbar ab</label>
+                      <input id="luc-avail" type="date" value={availFrom} onChange={e => setAvailFrom(e.target.value)}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                    </div>
+                  </div>
+                  <div>
+                    <span className="block text-xs font-medium text-gray-600 mb-1">BizDevOps Capabilities & Effizienzpotential</span>
+                    <div className="space-y-2">
+                      {capabilities.map(cap => {
+                        const entry = caps.find(e => e.capability_id === cap.id)
+                        return (
+                          <div key={cap.id} className="flex items-center gap-2">
+                            <button type="button" onClick={() => toggleCap(cap.id)}
+                              className={`px-2.5 py-1 rounded-full text-xs border transition-colors whitespace-nowrap ${entry ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-200 hover:border-brand-300'}`}>
+                              {cap.name}
+                            </button>
+                            {entry && (
+                              <div className="flex items-center gap-1">
+                                <input id={`luc-eff-${cap.id}`} type="number" min="0" max="100"
+                                  value={entry.efficiency_potential}
+                                  onChange={e => updateCapEff(cap.id, e.target.value)}
+                                  placeholder="0–100"
+                                  className="w-20 px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                                <span className="text-xs text-gray-500">%</span>
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  <div>
+                    <span className="block text-xs font-medium text-gray-600 mb-1">Maturitätsstufen</span>
+                    <div className="flex flex-wrap gap-2">
+                      {maturityLevels.map(ml => (
+                        <button key={ml.id} type="button" onClick={() => toggleMat(ml.id)}
+                          className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${maturity.includes(ml.id) ? 'bg-brand-600 text-white border-brand-600' : 'bg-white text-gray-600 border-gray-200 hover:border-brand-300'}`}>
+                          {ml.code} – {ml.title}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    <button type="submit" disabled={saving}
+                      className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg">
+                      {saving ? 'Speichern…' : 'Speichern'}
+                    </button>
+                    <button type="button" onClick={() => setShowLocalUcModal(false)}
+                      className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Abbrechen</button>
+                    {isEdit && (
+                      <button type="button" onClick={() => handleDeleteLocalUc(useCases.find(u => u.id === editingLocalUcId)!)}
+                        className="ml-auto px-4 py-2 text-sm text-red-400 hover:text-red-600">Löschen</button>
+                    )}
+                  </div>
+                </form>
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* Timeline Entry Modal */}
+        {showTimelineModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 no-print p-4"
+            onClick={e => { if (e.target === e.currentTarget) setShowTimelineModal(false) }}>
+            <div className="bg-white rounded-xl p-6 w-full max-w-sm">
+              <div className="flex items-start justify-between mb-4">
+                <h3 className="text-lg font-bold text-gray-900">Eintrag hinzufügen</h3>
+                <button type="button" onClick={() => setShowTimelineModal(false)}
+                  className="text-gray-400 hover:text-gray-600 text-xl leading-none shrink-0">×</button>
+              </div>
+              <form onSubmit={handleCreateTimelineEntry} className="space-y-3">
+                <div>
+                  <label htmlFor="tl-title" className="block text-xs font-medium text-gray-600 mb-1">Titel *</label>
+                  <input id="tl-title" type="text" value={tlTitle} onChange={e => setTlTitle(e.target.value)} required
+                    placeholder="z.B. Kickoff, Phase 1…"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="tl-from" className="block text-xs font-medium text-gray-600 mb-1">Von *</label>
+                    <input id="tl-from" type="date" value={tlFrom} onChange={e => setTlFrom(e.target.value)} required
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                  </div>
+                  <div>
+                    <label htmlFor="tl-until" className="block text-xs font-medium text-gray-600 mb-1">Bis *</label>
+                    <input id="tl-until" type="date" value={tlUntil} onChange={e => setTlUntil(e.target.value)} required
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                  </div>
+                </div>
+                {tlFrom && tlUntil && (
+                  <p className="text-[10px] text-gray-400">
+                    {tlFrom === tlUntil ? '◆ Wird als Meilenstein angezeigt' : '▬ Wird als Balken angezeigt'}
+                  </p>
+                )}
+                <div className="flex gap-2 pt-1">
+                  <button type="submit"
+                    className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg">
+                    Hinzufügen
+                  </button>
+                  <button type="button" onClick={() => setShowTimelineModal(false)}
+                    className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Abbrechen</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
         {error && (
           <div className="max-w-5xl mx-auto px-4 mt-4 no-print">
             <p className="text-red-600 text-sm bg-red-50 border border-red-200 rounded-lg p-3">{error}
@@ -706,140 +1024,157 @@ export default function PlanPage() {
 
         <div className="max-w-5xl mx-auto px-4 py-6">
 
-          {/* ══════ ÜBERSICHT ══════════════════════════════════════════════ */}
-          <CollapsibleSection title="Übersicht" subtitle="Header, Kennzahlen, Business Context & Risiken" defaultOpen={true} hidePrintTitle>
+          {/* ══════ HEADER ══════════════════════════════════════════════ */}
+          <CollapsibleSection title="Der ART im Überblick" subtitle="Nützliche Zahlen, Daten und Fakten zum ART" defaultOpen={true} hidePrintTitle>
 
-            {/* ── Header Box ── */}
-            <div className="bg-white rounded-xl border border-gray-200 p-6 mb-4">
-              <p className="text-sm text-gray-500 mb-1">
-                {org?.description ?? org?.name ?? ''}
-                {orgDivision && <><span className="mx-1.5 text-gray-300">•</span>{orgDivision.title}</>}
-              </p>
-              <h2 className="font-bold text-gray-900" style={{ fontSize: '1.625rem', lineHeight: '2rem' }}>{art.name}</h2>
+            {/* ── Zeile 1: Titelbox + ART-Leitung ── */}
+            <div className="grid grid-cols-2 gap-4 mb-4">
+              {/* Titelbox */}
+              <div className="bg-white rounded-xl border border-gray-200 p-6">
+                <p className="text-sm text-gray-600 mb-1">
+                  {org?.description ?? org?.name ?? ''}
+                  {orgDivision && <><span className="mx-1.5 text-gray-300">•</span>{orgDivision.title}</>}
+                </p>
+                <h2 className="font-bold text-gray-900" style={{ fontSize: '1.625rem', lineHeight: '2rem' }}>{art.name}</h2>
+                {art.mission_statement && (
+                  <div className="mt-4 pt-4 border-t border-gray-100">
+                    {editingIntro && <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Mission Statement / Beschreibung ART</h4>}
+                    <div className="rich-text-content text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: art.mission_statement }} />
+                  </div>
+                )}
+              </div>
 
-              {art.mission_statement ? (
+              {/* ART-Leitung + Lead/Ansprechperson + Begleitungsmodus */}
+              <div className="bg-white rounded-xl border border-gray-200 p-6">
+                <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">ART-Leitung</p>
+                {art.art_leadership
+                  ? <p className="text-sm text-gray-900 whitespace-pre-wrap">{art.art_leadership}</p>
+                  : <p className="text-xs text-gray-300">–</p>}
                 <div className="mt-4 pt-4 border-t border-gray-100">
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Mission Statement / Beschreibung ART</h4>
-                  <div className="rich-text-content text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: art.mission_statement }} />
-                </div>
-              ) : !editingIntro && (
-                <div className="mt-4 pt-4 border-t border-gray-100">
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Mission Statement / Beschreibung ART</h4>
-                  <p className="text-xs text-gray-400 italic">Noch nicht beschrieben.</p>
-                </div>
-              )}
-            </div>
-
-            {/* ── ART-Leitung / Verantwortliche Person / AI-Maturität ── */}
-            {(art.art_leadership || art.responsible_person || selectedMaturityLevel) && (
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                <div className="col-span-2 bg-white rounded-xl border border-gray-200 p-4">
-                  <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">ART-Leitung</p>
-                  {art.art_leadership
-                    ? <p className="text-sm text-gray-900 whitespace-pre-wrap">{art.art_leadership}</p>
-                    : <p className="text-xs text-gray-300">–</p>}
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                  <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Lead / Ansprechperson für Plan</p>
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Lead / Ansprechperson für diesen Plan</p>
                   {art.responsible_person
                     ? <p className="text-sm text-gray-900">{art.responsible_person}</p>
                     : <p className="text-xs text-gray-300">–</p>}
                 </div>
-                <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-                  <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Aktuelle AI-Maturität</p>
-                  {selectedMaturityLevel ? (
-                    <>
-                      <p className="text-xl font-bold text-gray-900">{selectedMaturityLevel.code}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">{selectedMaturityLevel.title}</p>
-                    </>
-                  ) : <p className="text-2xl font-bold text-gray-300">–</p>}
+                <div className="mt-4 pt-4 border-t border-gray-100">
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Begleitungsmodus</p>
+                  <p className="text-sm font-semibold text-gray-900">{selectedMode ? `${selectedMode.letter} – ${selectedMode.title}` : <span className="text-gray-300 font-normal">–</span>}</p>
+                  {art.guidance_mode_reason && <p className="text-xs text-gray-500 mt-1">{art.guidance_mode_reason}</p>}
                 </div>
-              </div>
-            )}
-
-            {/* ── 4 KPI Boxes row 1 ── */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-              <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-                <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Teams</p>
-                <p className="text-2xl font-bold text-gray-900">{teamsData.length}</p>
-              </div>
-              <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-                <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Mitarbeitende</p>
-                <p className="text-2xl font-bold text-gray-900">{fmtFTE(artTotals.totalFTE)} <span className="text-sm font-normal text-gray-400">FTE</span></p>
-                <p className="text-xs text-gray-500">{artTotals.totalHC} HC</p>
-              </div>
-              <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-                <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Anteil Intern vs. Extern</p>
-                {internPct !== null ? (
-                  <>
-                    <p className="text-xl font-bold text-gray-900">{internPct}% <span className="text-sm font-normal text-gray-400">intern</span></p>
-                    <p className="text-xs text-gray-500">{externPct}% extern</p>
-                  </>
-                ) : <p className="text-2xl font-bold text-gray-300">–</p>}
-              </div>
-              <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-                <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Anteil IT vs. Business</p>
-                {itPct !== null ? (
-                  <>
-                    <p className="text-xl font-bold text-gray-900">{itPct}% <span className="text-sm font-normal text-gray-400">IT</span></p>
-                    <p className="text-xs text-gray-500">{businessPct}% Business</p>
-                  </>
-                ) : <p className="text-2xl font-bold text-gray-300">–</p>}
               </div>
             </div>
 
-            {/* ── FTE-Aufteilung ── */}
-            {Object.keys(artCapAllocation).length > 0 && (
-              <div className="mb-4 bg-white rounded-xl border border-gray-200 p-5">
-                <h5 className="text-sm font-semibold text-gray-700 mb-2">Verteilung der Arbeitsleistung – gesamter ART</h5>
-                <StackedBar slices={capabilities
-                  .map(cap => ({ label: cap.name, value: artCapAllocation[cap.id] ?? 0, color: cap.color ?? '#6366f1' }))} />
+            {/* ── Zeile 2: Kombinierte KPI-Box ── */}
+            <div className="bg-white rounded-xl border border-gray-200 mb-4 flex items-stretch divide-x divide-gray-100">
+              {/* Links: AI-Maturität */}
+              <div className="flex flex-col items-center px-8 pt-5 pb-5 shrink-0 min-w-[10rem]">
+                <p className="text-[10px] text-gray-600 uppercase tracking-wide mb-3 text-center">Aktuelle AI-Maturität</p>
+                {selectedMaturityLevel ? (
+                  <>
+                    <p className="text-5xl font-bold text-gray-900 leading-none">{selectedMaturityLevel.code}</p>
+                    <p className="text-xs text-gray-600 mt-2 text-center leading-snug">{selectedMaturityLevel.title}</p>
+                  </>
+                ) : <p className="text-5xl font-bold text-gray-200 leading-none">–</p>}
               </div>
-            )}
+
+              {/* Mitte: Teams + Head Count */}
+              <div className="flex items-stretch justify-center divide-x divide-gray-100 shrink-0">
+                <div className="flex flex-col items-center px-10 pt-5 pb-5">
+                  <p className="text-[10px] text-gray-600 uppercase tracking-wide mb-3">Teams</p>
+                  <p className="text-5xl font-bold text-gray-900 leading-none">{teamsData.length}</p>
+                </div>
+                <div className="flex flex-col items-center px-10 pt-5 pb-5">
+                  <p className="text-[10px] text-gray-600 uppercase tracking-wide mb-3">Head Count</p>
+                  <p className="text-5xl font-bold text-gray-900 leading-none">{artTotals.totalHC}</p>
+                </div>
+              </div>
+
+              {/* Rechts: 100%-Balken */}
+              <div className="flex-1 flex flex-col justify-start gap-5 px-8 pt-5 pb-5">
+                <div>
+                  <div className="flex justify-between text-[10px] mb-1.5">
+                    <span className="uppercase tracking-wide text-gray-600">Internalisierungsrate</span>
+                    {internPct !== null && <span className="text-gray-600">{internPct}% intern · {externPct}% extern</span>}
+                  </div>
+                  <div className="h-3 rounded-full overflow-hidden flex bg-gray-300">
+                    {internPct !== null ? (
+                      <div className="bg-gray-900 h-full" style={{ width: `${internPct}%` }} />
+                    ) : null}
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-[10px] mb-1.5">
+                    <span className="uppercase tracking-wide text-gray-600">Verteilung intern</span>
+                    {itPct !== null && <span className="text-gray-600">{itPct}% IT · {businessPct}% Business</span>}
+                  </div>
+                  <div className="h-3 rounded-full overflow-hidden flex bg-gray-300">
+                    {itPct !== null ? (
+                      <div className="bg-gray-900 h-full" style={{ width: `${itPct}%` }} />
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </div>
 
             {/* ── Business Context & Risiken ── */}
             {editingIntro ? (
               <div className="space-y-4">
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Name des ART</h4>
+                  <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Name des ART</h4>
                   <input type="text" value={artName} onChange={e => setArtName(e.target.value)}
                     placeholder="ART-Name"
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
                 </div>
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Mission Statement / Beschreibung ART</h4>
+                  <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Mission Statement / Beschreibung ART</h4>
                   <RichTextEditor value={missionStatement} onChange={setMissionStatement} placeholder="Mission Statement / Beschreibung des ART…" />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="bg-white rounded-xl border border-gray-200 p-5">
-                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">ART-Leitung</h4>
+                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">ART-Leitung</h4>
                     <p className="text-[10px] text-gray-400 mb-2">Vorname Name, Rolle</p>
                     <textarea value={artLeadership} onChange={e => setArtLeadership(e.target.value)} rows={3}
                       placeholder="z.B. Max Muster, Chief Product Officer"
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
                   </div>
-                  <div className="bg-white rounded-xl border border-gray-200 p-5">
-                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Lead / Ansprechperson für Plan</h4>
-                    <p className="text-[10px] text-gray-400 mb-2">Üblicherweise RTE des ART oder STE der AO</p>
-                    <input type="text" value={responsiblePerson} onChange={e => setResponsiblePerson(e.target.value)}
-                      placeholder="z.B. Anna Muster"
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                  <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+                    <div>
+                      <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Lead / Ansprechperson für Plan</h4>
+                      <p className="text-[10px] text-gray-400 mb-2">Üblicherweise RTE des ART oder STE der AO</p>
+                      <input type="text" value={responsiblePerson} onChange={e => setResponsiblePerson(e.target.value)}
+                        placeholder="z.B. Anna Muster"
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                    </div>
+                    <div className="pt-3 border-t border-gray-100">
+                      <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Begleitungsmodus</h4>
+                      <select aria-label="Begleitungsmodus" value={guidanceModeId ?? ''} onChange={e => setGuidanceModeId(e.target.value || null)}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-brand-500">
+                        <option value="">– Nicht gewählt –</option>
+                        {guidanceModes.map(m => <option key={m.id} value={m.id}>{m.letter} – {m.title}</option>)}
+                      </select>
+                      <div className="mt-3">
+                        <label htmlFor="guidance-reason" className="block text-[10px] text-gray-400 mb-1">Begründung</label>
+                        <textarea id="guidance-reason" value={guidanceModeReason} onChange={e => setGuidanceModeReason(e.target.value)} rows={2}
+                          placeholder="Begründung für die Wahl des Begleitungsmodus…"
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="bg-white rounded-xl border border-gray-200 p-5">
-                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Business Context & Roadmap</h4>
+                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Business Context & Roadmap</h4>
                     <p className="text-[10px] text-gray-400 mb-2">Was kommt in den nächsten 1–5 Jahren auf diesen ART zu?</p>
                     <RichTextEditor value={businessContext} onChange={setBusinessContext} placeholder="Business Context…" />
                   </div>
                   <div className="bg-white rounded-xl border border-gray-200 p-5">
-                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Risiken & Störfaktoren</h4>
+                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Risiken & Störfaktoren</h4>
                     <p className="text-[10px] text-gray-400 mb-2">Was könnte die geplante Transformation gefährden?</p>
                     <RichTextEditor value={risks} onChange={setRisks} placeholder="Risiken…" />
                   </div>
                 </div>
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cyber-Kritikalität</h4>
+                  <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Cyber-Kritikalität</h4>
                   <div className="flex items-start gap-4">
                     <div className="shrink-0">
                       <label htmlFor="cyber-crit" className="block text-[10px] text-gray-400 mb-1">Einstufung</label>
@@ -860,21 +1195,7 @@ export default function PlanPage() {
                   </div>
                 </div>
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Begleitungsmodus</h4>
-                  <select aria-label="Begleitungsmodus" value={guidanceModeId ?? ''} onChange={e => setGuidanceModeId(e.target.value || null)}
-                    className="w-full max-w-xs px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-brand-500">
-                    <option value="">– Nicht gewählt –</option>
-                    {guidanceModes.map(m => <option key={m.id} value={m.id}>{m.letter} – {m.title}</option>)}
-                  </select>
-                  <div className="mt-3">
-                    <label htmlFor="guidance-reason" className="block text-[10px] text-gray-400 mb-1">Begründung</label>
-                    <textarea id="guidance-reason" value={guidanceModeReason} onChange={e => setGuidanceModeReason(e.target.value)} rows={2}
-                      placeholder="Begründung für die Wahl des Begleitungsmodus…"
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
-                  </div>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 p-5">
-                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Aktuelle AI-Maturität</h4>
+                  <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Aktuelle AI-Maturität</h4>
                   <p className="text-[10px] text-gray-400 mb-2">Bestimmend ist der Ersteinsatz (Einführung ab).</p>
                   <select aria-label="Aktuelle AI-Maturität" value={currentMaturityLevelId ?? ''} onChange={e => setCurrentMaturityLevelId(e.target.value || null)}
                     className="w-full max-w-xs px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-brand-500">
@@ -896,15 +1217,15 @@ export default function PlanPage() {
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-3">
                   <div className="bg-white rounded-xl border border-gray-200 p-5">
-                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Business Context & Roadmap</h4>
+                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Business Context & Roadmap</h4>
                     {art.business_context
                       ? <div className="rich-text-content text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: art.business_context }} />
                       : <p className="text-xs text-gray-400 italic">Noch nicht beschrieben.</p>}
                   </div>
                   <div className="bg-white rounded-xl border border-gray-200 p-5">
-                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Risiken & Störfaktoren</h4>
+                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Risiken & Störfaktoren</h4>
                     {art.risks
                       ? <div className="rich-text-content text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: art.risks }} />
                       : <p className="text-xs text-gray-400 italic">Noch nicht beschrieben.</p>}
@@ -912,7 +1233,7 @@ export default function PlanPage() {
                 </div>
                 {(art.cyber_criticality || art.cyber_criticality_reason) && (
                   <div className="mt-3 bg-white rounded-xl border border-gray-200 p-5">
-                    <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Cyber-Kritikalität</h4>
+                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Cyber-Kritikalität</h4>
                     <div className="flex items-start gap-3">
                       {art.cyber_criticality && (
                         <span className={`inline-block shrink-0 px-3 py-1 rounded-full text-sm font-semibold ${
@@ -928,20 +1249,6 @@ export default function PlanPage() {
                   </div>
                 )}
 
-                {/* ── Begleitungsmodus ── */}
-                <div className="mt-3 bg-white rounded-xl border border-gray-200 p-4 flex gap-6">
-                  <div className="shrink-0">
-                    <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Begleitungsmodus</p>
-                    <p className="text-base font-bold text-gray-900">{selectedMode ? `${selectedMode.letter} – ${selectedMode.title}` : '–'}</p>
-                  </div>
-                  {art.guidance_mode_reason && (
-                    <div className="flex-1 border-l border-gray-100 pl-6">
-                      <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1">Begründung</p>
-                      <p className="text-sm text-gray-700">{art.guidance_mode_reason}</p>
-                    </div>
-                  )}
-                </div>
-
                 {editable && (
                   <button type="button" onClick={() => setEditingIntro(true)}
                     className="mt-4 px-4 py-2 border border-gray-200 text-sm text-brand-600 hover:bg-brand-50 font-medium rounded-lg no-print">
@@ -953,7 +1260,7 @@ export default function PlanPage() {
           </CollapsibleSection>
 
           {/* ══════ STANDORTBESTIMMUNG ════════════════════════════════════ */}
-          <CollapsibleSection title="Standortbestimmung" subtitle="Bewertung von 12 Dimensionen mit Ampelfarbe und Begründung">
+          <CollapsibleSection title="Standortbestimmung" subtitle="Erfolgsfaktoren für die Transformation und wo wir aktuell stehen">
             {(() => {
               const sbMap = new Map(standortbestimmung.map(s => [s.dimension_key, s]))
               const isEditing = editingStandortbestimmung
@@ -1022,7 +1329,7 @@ export default function PlanPage() {
                   </div>
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-left text-xs text-gray-500 border-b border-gray-100">
+                      <tr className="text-left text-xs text-gray-600 border-b border-gray-100">
                         <th className="px-5 py-2 font-medium w-1/2">Dimension</th>
                         <th className="px-4 py-2 font-medium w-1/2">Begründung</th>
                       </tr>
@@ -1099,7 +1406,7 @@ export default function PlanPage() {
           </CollapsibleSection>
 
           {/* ══════ AKTUELLE TEAM-STRUKTUREN ══════════════════════════════ */}
-          <CollapsibleSection title="Teams" subtitle="Teams, Mitarbeitende & BizDevOps Kapazitätsverteilung">
+          <CollapsibleSection title="Diagnose Teil 1 – Teamsicht" subtitle="Teams, Rollen und Kapazitätsverteilung">
             <div className="space-y-4">
               {teamsData.map(td => {
                 const isEditingThis = editingTeamId === td.team.id
@@ -1109,6 +1416,7 @@ export default function PlanPage() {
                 const allocSlices = capabilities
                   .map(cap => ({ label: cap.name, value: td.allocations[cap.id] ?? 0, color: cap.color ?? '#6366f1' }))
 
+                const isExpanded = expandedTeamIds.has(td.team.id)
                 return (
                   <div key={td.team.id} className="bg-white rounded-xl border border-gray-200 p-5 print-no-break">
                     {isEditingThis ? (
@@ -1118,16 +1426,22 @@ export default function PlanPage() {
                         onAllocChange={(capId, val) => handleAllocChange(td.team.id, capId, val)} onClose={() => setEditingTeamId(null)} />
                     ) : (
                       <>
-                        <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-start justify-between cursor-pointer" onClick={() => toggleTeamExpand(td.team.id)}>
                           <div>
                             <h4 className="text-base font-semibold text-gray-900">{td.team.name}</h4>
-                            {td.team.description && <p className="text-xs text-gray-500 mt-0.5">{td.team.description}</p>}
+                            {td.team.description && <p className="text-xs text-gray-600 mt-0.5">{td.team.description}</p>}
                           </div>
-                          {editable && (
-                            <button type="button" onClick={() => setEditingTeamId(td.team.id)}
-                              className="px-3 py-1.5 border border-gray-200 text-xs text-brand-600 hover:bg-brand-50 font-medium rounded-lg no-print">Bearbeiten</button>
-                          )}
+                          <div className="flex items-center gap-2 shrink-0 ml-3">
+                            {editable && (
+                              <button type="button" onClick={e => { e.stopPropagation(); toggleTeamExpand(td.team.id); setEditingTeamId(td.team.id) }}
+                                className="px-3 py-1.5 border border-gray-200 text-xs text-brand-600 hover:bg-brand-50 font-medium rounded-lg no-print">Bearbeiten</button>
+                            )}
+                            <span className={`text-gray-400 transition-transform duration-150 ${isExpanded ? 'rotate-180' : ''}`}>
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                            </span>
+                          </div>
                         </div>
+                        {isExpanded && <>
                         <h5 className="text-sm font-semibold text-gray-700 mt-6 mb-2">Team-Zusammenstellung</h5>
                         <SummaryTable rows={teamSummary} totals={teamTotals} />
                         {hasAnyAllocation && (
@@ -1197,6 +1511,7 @@ export default function PlanPage() {
                             </div>
                           )
                         })()}
+                        </>}
                       </>
                     )}
                   </div>
@@ -1219,21 +1534,15 @@ export default function PlanPage() {
                 </form>
               ) : (
                 <button type="button" onClick={() => setShowNewTeam(true)}
-                  className="w-full py-3 border-2 border-dashed border-gray-300 text-sm text-gray-500 hover:border-brand-400 hover:text-brand-600 rounded-xl transition-colors no-print">
+                  className="w-full py-3 border-2 border-dashed border-gray-300 text-sm text-gray-600 hover:border-brand-400 hover:text-brand-600 rounded-xl transition-colors no-print">
                   + Neues Team hinzufügen</button>
               ))}
             </div>
           </CollapsibleSection>
 
-          {/* ══════ MITARBEITENDE ════════════════════════════════════════ */}
-          <CollapsibleSection title="Mitarbeitende" subtitle="Übersicht aller Mitarbeitenden im ART">
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <SummaryTable rows={artSummary} totals={artTotals} />
-            </div>
-          </CollapsibleSection>
 
           {/* ══════ USE CASE POTENTIALE ═══════════════════════════════════ */}
-          <CollapsibleSection title="Use Case Potentiale" subtitle="Rangliste aller Use Cases nach Prio-Score">
+          <CollapsibleSection title="Diagnose Teil 2 – Potenziale" subtitle="Rangliste aller Use Cases nach Prio">
             {(() => {
               type UcRankRow = {
                 uc: AIUseCase
@@ -1262,14 +1571,6 @@ export default function PlanPage() {
               })
 
               const viewSorted = [...rows].sort((a, b) => b.prioScore !== a.prioScore ? b.prioScore - a.prioScore : a.uc.title.localeCompare(b.uc.title, 'de'))
-              const editSorted = editingPotentiale
-                ? [...rows].sort((a, b) => {
-                    const na = ratingEdits[a.uc.id] ?? a; const nb = ratingEdits[b.uc.id] ?? b
-                    const sa = na.nutzen * na.skalierbarkeit * na.akzeptanz
-                    const sb = nb.nutzen * nb.skalierbarkeit * nb.akzeptanz
-                    return sb !== sa ? sb - sa : a.uc.title.localeCompare(b.uc.title, 'de')
-                  })
-                : viewSorted
 
               if (viewSorted.length === 0) return (
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -1277,18 +1578,17 @@ export default function PlanPage() {
                 </div>
               )
 
-              const UC_STATUS_BADGE: Partial<Record<AIUseCaseStatus, string>> = {
-                'In Backlog': 'bg-gray-100 text-gray-600', 'In Lösungsexploration': 'bg-blue-50 text-blue-700',
-                'In Entwicklung': 'bg-amber-50 text-amber-700', 'Im Rollout': 'bg-purple-50 text-purple-700',
-                'In Betrieb': 'bg-green-50 text-green-700', 'Abgebrochen': 'bg-red-50 text-red-600',
+              const UC_STATUS_SHORT: Partial<Record<AIUseCaseStatus, string>> = {
+                'In Lösungsexploration': 'Lösungsexpl.',
+                'In Entwicklung': 'In Entwicklg.',
               }
 
-              const displayRows = editingPotentiale ? editSorted : viewSorted
+              const displayRows = viewSorted
 
               return (
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
-                  <div className="flex items-center justify-between mb-3 no-print">
-                    <p className="text-[10px] text-gray-400">Prio-Score = Nutzen × Skalierbarkeit × Akzeptanz (je 1–5)</p>
+                  <div className="flex items-center justify-between mb-1 no-print">
+                    <h5 className="text-sm font-semibold text-gray-700">Bewertung Use Cases</h5>
                     {editable && !editingPotentiale && (
                       <button type="button" onClick={handleEnterPotentialeEdit}
                         className="px-3 py-1.5 border border-gray-200 text-xs text-brand-600 hover:bg-brand-50 font-medium rounded-lg">
@@ -1296,20 +1596,20 @@ export default function PlanPage() {
                       </button>
                     )}
                   </div>
+                  <p className="text-[10px] text-gray-400 mb-3">Prio = Nutzen × Skalierbarkeit × Akzeptanz (je 1–5)</p>
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
                         <tr className="text-left text-[10px] text-gray-400 border-b border-gray-200">
-                          <th className="pb-2 font-medium pr-2">#</th>
+                          <th className="pb-2 font-medium text-center bg-brand-50 text-brand-700 rounded-t px-2 pr-3">Prio</th>
                           <th className="pb-2 font-medium pr-3">Use Case</th>
                           <th className="pb-2 font-medium pr-3">Status</th>
                           <th className="pb-2 font-medium pr-3">Verfügbar ab</th>
-                          <th className="pb-2 font-medium text-center pr-2">Max. einsetzbar in Teams</th>
+                          <th className="pb-2 font-medium text-center pr-2">Max. betroffene Teams</th>
                           <th className="pb-2 font-medium text-center pr-2">Max. betroffene MA</th>
-                          <th className="pb-2 font-medium text-center pr-1 bg-sky-50 text-sky-600 rounded-tl">Eigenbewertung Nutzen</th>
-                          <th className="pb-2 font-medium text-center pr-1 bg-sky-50 text-sky-600">Eigenbewertung Skalierb.</th>
-                          <th className="pb-2 font-medium text-center pr-2 bg-sky-50 text-sky-600">Eigenbewertung Akzept.</th>
-                          <th className="pb-2 font-medium text-center bg-brand-50 text-brand-700 rounded-t px-2">Prio-Score</th>
+                          <th className="pb-2 font-medium text-center pr-1 bg-sky-50 text-sky-600 rounded-tl">Bewertung Nutzen</th>
+                          <th className="pb-2 font-medium text-center pr-1 bg-sky-50 text-sky-600">Bewertung Skalierb.</th>
+                          <th className="pb-2 font-medium text-center pr-2 bg-sky-50 text-sky-600">Bewertung Akzept.</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1321,16 +1621,21 @@ export default function PlanPage() {
                               setRatingEdits(prev => ({ ...prev, [row.uc.id]: { ...(prev[row.uc.id] ?? e), [field]: val } }))
                             return (
                               <tr key={row.uc.id} className="border-b border-gray-50">
-                                <td className="py-1.5 pr-2 tabular-nums text-gray-500">{i + 1}</td>
-                                <td className="py-1.5 pr-3 font-medium text-gray-800">{row.uc.title}</td>
+                                <td className="py-1.5 text-center tabular-nums font-semibold px-3 bg-brand-50 text-brand-700">{liveScore}</td>
+                                <td className="py-1.5 pr-3">
+                                  <span className="font-medium text-gray-800">{row.uc.title}</span>
+                                  {row.uc.type === 'local' && (
+                                    <span className="ml-1.5 text-[9px] px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded-full font-medium">lokal</span>
+                                  )}
+                                </td>
                                 <td className="py-1.5 pr-3">
                                   {row.uc.status
-                                    ? <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${UC_STATUS_BADGE[row.uc.status] ?? 'bg-gray-100 text-gray-600'}`}>{row.uc.status}</span>
+                                    ? <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600">{UC_STATUS_SHORT[row.uc.status] ?? row.uc.status}</span>
                                     : <span className="text-gray-400">–</span>}
                                 </td>
-                                <td className="py-1.5 pr-3 tabular-nums text-gray-500">{row.uc.available_from ? fmtDate(row.uc.available_from) : '–'}</td>
+                                <td className="py-1.5 pr-3 tabular-nums text-gray-600">{row.uc.available_from ? fmtDate(row.uc.available_from) : '–'}</td>
                                 <td className="py-1.5 pr-2 text-center tabular-nums text-gray-800">{row.anzahlTeams}</td>
-                                <td className="py-1.5 pr-2 text-center tabular-nums text-gray-500">{row.anzahlHC > 0 ? row.anzahlHC : '–'}</td>
+                                <td className="py-1.5 pr-2 text-center tabular-nums text-gray-600">{row.anzahlHC > 0 ? row.anzahlHC : '–'}</td>
                                 <td className="py-1 pr-1 bg-sky-50">
                                   <select aria-label="Nutzen" value={e.nutzen} onChange={ev => setField('nutzen', Number(ev.target.value))}
                                     className="w-14 px-1 py-0.5 border border-sky-200 rounded text-xs bg-white text-center focus:outline-none focus:ring-1 focus:ring-sky-400">
@@ -1349,37 +1654,50 @@ export default function PlanPage() {
                                     {[1,2,3,4,5].map(v => <option key={v} value={v}>{v}</option>)}
                                   </select>
                                 </td>
-                                <td className="py-1.5 text-center tabular-nums font-semibold px-2 bg-brand-50 text-brand-700">{liveScore}</td>
                               </tr>
                             )
                           }
                           return (
                             <tr key={row.uc.id} className="border-b border-gray-50">
-                              <td className="py-2 pr-2 font-medium tabular-nums text-gray-800">{i + 1}</td>
+                              <td className={`py-2 text-center tabular-nums font-semibold px-3 pr-3 ${row.hasRating ? 'bg-brand-50 text-brand-700' : 'bg-gray-50 text-gray-300'}`}>{row.prioScore}</td>
                               <td className="py-2 pr-3">
-                                <button type="button" onClick={() => setDetailUseCaseId(row.uc.id)}
-                                  className="font-medium text-brand-600 hover:text-brand-700 hover:underline text-left">
-                                  {row.uc.title}
-                                </button>
+                                <div className="flex items-center gap-1.5">
+                                  <button type="button" onClick={() => setDetailUseCaseId(row.uc.id)}
+                                    className="font-medium text-brand-600 hover:text-brand-700 hover:underline text-left">
+                                    {row.uc.title}
+                                  </button>
+                                  {row.uc.type === 'local' && (
+                                    <span className="text-[9px] px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded-full font-medium whitespace-nowrap">lokal</span>
+                                  )}
+                                </div>
                               </td>
                               <td className="py-2 pr-3">
                                 {row.uc.status
-                                  ? <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${UC_STATUS_BADGE[row.uc.status] ?? 'bg-gray-100 text-gray-600'}`}>{row.uc.status}</span>
+                                  ? <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600">{UC_STATUS_SHORT[row.uc.status] ?? row.uc.status}</span>
                                   : <span className="text-gray-400">–</span>}
                               </td>
-                              <td className="py-2 pr-3 tabular-nums text-gray-500">{row.uc.available_from ? fmtDate(row.uc.available_from) : '–'}</td>
+                              <td className="py-2 pr-3 tabular-nums text-gray-600">{row.uc.available_from ? fmtDate(row.uc.available_from) : '–'}</td>
                               <td className="py-2 pr-2 text-center tabular-nums text-gray-800">{row.anzahlTeams}</td>
-                              <td className="py-2 pr-2 text-center tabular-nums text-gray-500">{row.anzahlHC > 0 ? row.anzahlHC : '–'}</td>
+                              <td className="py-2 pr-2 text-center tabular-nums text-gray-600">{row.anzahlHC > 0 ? row.anzahlHC : '–'}</td>
                               <td className={`py-2 pr-1 text-center tabular-nums font-medium bg-sky-50 ${row.hasRating ? 'text-sky-700' : 'text-gray-300'}`}>{row.nutzen}</td>
                               <td className={`py-2 pr-1 text-center tabular-nums font-medium bg-sky-50 ${row.hasRating ? 'text-sky-700' : 'text-gray-300'}`}>{row.skalierbarkeit}</td>
                               <td className={`py-2 pr-2 text-center tabular-nums font-medium bg-sky-50 ${row.hasRating ? 'text-sky-700' : 'text-gray-300'}`}>{row.akzeptanz}</td>
-                              <td className={`py-2 text-center tabular-nums font-semibold px-2 ${row.hasRating ? 'bg-brand-50 text-brand-700' : 'bg-gray-50 text-gray-300'}`}>{row.prioScore}</td>
                             </tr>
                           )
                         })}
                       </tbody>
                     </table>
                   </div>
+
+                  {editable && !editingPotentiale && (
+                    <div className="mt-3 no-print">
+                      <button type="button"
+                        onClick={() => { setEditingLocalUcId(null); setNewLocalUcTitle(''); setNewLocalUcDesc(''); setNewLocalUcLink(''); setNewLocalUcStatus(''); setNewLocalUcAvailFrom(''); setNewLocalUcCaps([]); setNewLocalUcMaturity([]); setShowLocalUcModal(true) }}
+                        className="px-3 py-1.5 border border-dashed border-gray-300 text-xs text-brand-600 hover:border-brand-400 hover:bg-brand-50 font-medium rounded-lg">
+                        + Lokaler Use Case erfassen
+                      </button>
+                    </div>
+                  )}
 
                   {/* ── Geplantes Vorgehen ── */}
                   <div className="mt-6 pt-4 border-t border-gray-100">
@@ -1414,51 +1732,88 @@ export default function PlanPage() {
           </CollapsibleSection>
 
           {/* ══════ USE CASE PLANUNG ══════════════════════════════════════ */}
-          <CollapsibleSection title="Use Case Planung" subtitle="Geplante Verwendungen von AI Use Cases pro Team">
+          <CollapsibleSection title="Planung Teil 1 – Use Case Erprobung & Nutzung" subtitle="Geplante Verwendungen von AI Use Cases pro Team">
             <div className="space-y-4">
-              {usedUseCaseIds.map(ucId => {
-                const uc = useCases.find(u => u.id === ucId)
-                if (!uc) return null
-                const capLinks = useCaseCapLinks.filter(l => l.use_case_id === ucId)
-                const statusRows: ARTUseCase[] = teamsData.map(td => {
-                  const existing = artUseCases.find(u => u.use_case_id === ucId && u.team_id === td.team.id)
-                  return existing ?? {
-                    id: `new-${ucId}-${td.team.id}`, art_id: art.id, use_case_id: ucId, team_id: td.team.id,
-                    status: 'not_planned', created_at: '',
-                  }
+              {(() => {
+                const sortedUsedUcIds = [...usedUseCaseIds].sort((a, b) => {
+                  const ra = artUseCaseRatings.find(r => r.use_case_id === a)
+                  const rb = artUseCaseRatings.find(r => r.use_case_id === b)
+                  const sa = (ra?.nutzen ?? 1) * (ra?.skalierbarkeit ?? 1) * (ra?.akzeptanz ?? 1)
+                  const sb = (rb?.nutzen ?? 1) * (rb?.skalierbarkeit ?? 1) * (rb?.akzeptanz ?? 1)
+                  if (sb !== sa) return sb - sa
+                  const ta = useCases.find(u => u.id === a)?.title ?? ''
+                  const tb = useCases.find(u => u.id === b)?.title ?? ''
+                  return ta.localeCompare(tb, 'de')
                 })
-                const isEditingThis = editingUseCaseId === ucId
+                return sortedUsedUcIds.map(ucId => {
+                  const uc = useCases.find(u => u.id === ucId)
+                  if (!uc) return null
+                  const capLinks = useCaseCapLinks.filter(l => l.use_case_id === ucId)
+                  const statusRows: ARTUseCase[] = teamsData.map(td => {
+                    const existing = artUseCases.find(u => u.use_case_id === ucId && u.team_id === td.team.id)
+                    return existing ?? { id: `new-${ucId}-${td.team.id}`, art_id: art.id, use_case_id: ucId, team_id: td.team.id, status: 'not_planned', created_at: '' }
+                  })
+                  const isEditingThis = editingUseCaseId === ucId
+                  const isExpanded = expandedUseCaseIds.has(ucId)
+                  const getTeamName = (id: string) => teamsData.find(td => td.team.id === id)?.team.name ?? '–'
+                  const getCapName = (id: string) => capabilities.find(c => c.id === id)?.name ?? '–'
+                  const getCapColor = (id: string) => capabilities.find(c => c.id === id)?.color ?? '#6366f1'
+                  const existingDates = artUseCaseDates.filter(d => d.use_case_id === ucId)
 
-                return (
-                  <div key={ucId} className="bg-white rounded-xl border border-gray-200 p-5 print-no-break">
-                    {isEditingThis ? (
-                      <UseCaseEditMode
-                        useCase={uc}
-                        teams={teamsData.map(td => td.team)}
-                        statusRows={statusRows}
-                        capLinks={capLinks}
-                        capabilities={capabilities}
-                        existingDates={artUseCaseDates.filter(d => d.use_case_id === ucId)}
-                        saving={saving}
-                        onSave={(rows, dateRows) => handleSaveUseCaseStatuses(ucId, rows, dateRows)}
-                        onRemove={() => handleRemoveUseCase(ucId, uc.title)}
-                        onClose={() => setEditingUseCaseId(null)}
-                      />
-                    ) : (
-                      <UseCaseView
-                        useCase={uc}
-                        teams={teamsData.map(td => td.team)}
-                        statusRows={statusRows}
-                        capabilities={capabilities}
-                        capLinks={capLinks}
-                        existingDates={artUseCaseDates.filter(d => d.use_case_id === ucId)}
-                        editable={editable}
-                        onEdit={() => setEditingUseCaseId(ucId)}
-                      />
-                    )}
-                  </div>
-                )
-              })}
+                  return (
+                    <div key={ucId} className="bg-white rounded-xl border border-gray-200 p-5 print-no-break">
+                      <div
+                        className="flex items-start justify-between cursor-pointer"
+                        onClick={() => !isEditingThis && toggleUseCaseExpand(ucId)}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <h4 className="text-base font-semibold text-gray-900">Use Case {uc.title}</h4>
+                          {!isExpanded && !isEditingThis && uc.description && (
+                            <p className="text-xs text-gray-500 mt-0.5 truncate">{uc.description}</p>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0 ml-3">
+                          {!isEditingThis && editable && (
+                            <button type="button"
+                              onClick={e => { e.stopPropagation(); setExpandedUseCaseIds(prev => { const n = new Set(prev); n.add(ucId); return n }); setEditingUseCaseId(ucId) }}
+                              className="px-3 py-1.5 border border-gray-200 text-xs text-brand-600 hover:bg-brand-50 font-medium rounded-lg no-print">
+                              Bearbeiten
+                            </button>
+                          )}
+                          {!isEditingThis && (
+                            <span className={`text-gray-400 transition-transform duration-150 ${isExpanded ? 'rotate-180' : ''}`}>
+                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {(isExpanded || isEditingThis) && (
+                        <div className="mt-4">
+                          {(isExpanded && !isEditingThis && uc.description) && (
+                            <p className="text-xs text-gray-500 mb-3">{uc.description}</p>
+                          )}
+                          <UseCasePlanTable
+                            key={isEditingThis ? 'edit' : 'view'}
+                            useCase={uc}
+                            teams={teamsData.map(td => td.team)}
+                            statusRows={statusRows}
+                            capLinks={capLinks}
+                            capabilities={capabilities}
+                            existingDates={existingDates}
+                            editable={editable}
+                            isEditing={isEditingThis}
+                            saving={saving}
+                            onEdit={() => { setExpandedUseCaseIds(prev => { const n = new Set(prev); n.add(ucId); return n }); setEditingUseCaseId(ucId) }}
+                            onSave={(rows, dateRows) => handleSaveUseCaseStatuses(ucId, rows, dateRows)}
+                            onRemove={() => handleRemoveUseCase(ucId, uc.title)}
+                            onClose={() => setEditingUseCaseId(null)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })
+              })()}
               {usedUseCaseIds.length === 0 && <p className="text-gray-400 text-sm text-center py-4">Noch keine AI Use Cases geplant.</p>}
 
               {editable && (showAddUseCase ? (
@@ -1481,24 +1836,21 @@ export default function PlanPage() {
                 </div>
               ) : (
                 <button type="button" onClick={() => setShowAddUseCase(true)}
-                  className="w-full py-3 border-2 border-dashed border-gray-300 text-sm text-gray-500 hover:border-brand-400 hover:text-brand-600 rounded-xl transition-colors no-print">
+                  className="w-full py-3 border-2 border-dashed border-gray-300 text-sm text-gray-600 hover:border-brand-400 hover:text-brand-600 rounded-xl transition-colors no-print">
                   + AI Use Case hinzufügen</button>
               ))}
             </div>
           </CollapsibleSection>
 
           {/* ══════ ROADMAP ═══════════════════════════════════════════════ */}
-          <CollapsibleSection title="Roadmap" subtitle="Zeitliche Planung der Erprobung und Einführung pro Use Case">
+          <CollapsibleSection title="Planung Teil 2 – Roadmap" subtitle="Zeitplan mit Meilensteinen und Übersicht über die Erprobung, Einführung und Nutzung der Use Cases">
             {(() => {
               const sqEnd = (d: Date) => new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3 + 3, 0)
 
               type RmDates = { pilotFrom: Date | null; rolloutFrom: Date | null; fullUsageFrom: Date | null }
               type RmCapRow = { capId: string; capName: string } & RmDates
-              type RmTeamEntry = {
-                teamId: string; teamName: string
-                showSingle: boolean; singleDates: RmDates; capRows: RmCapRow[]
-              }
-              type RmGroup = { ucId: string; rank: number; teams: RmTeamEntry[] }
+              type RmUcEntry = { ucId: string; rank: number; ucTitle: string; showSingle: boolean; singleDates: RmDates; capRows: RmCapRow[] }
+              type RmTeamGroup = { teamId: string; teamName: string; useCases: RmUcEntry[] }
 
               const pd = (s: string | null) => s ? new Date(s) : null
 
@@ -1511,34 +1863,32 @@ export default function PlanPage() {
                 .sort((a, b) => b.score - a.score || a.uc.title.localeCompare(b.uc.title, 'de'))
                 .map(x => x.uc.id)
 
-              const groups: RmGroup[] = []
-              sortedUcIds.forEach((ucId, rank) => {
-                const plannedTeamIds = artUseCases.filter(u => u.use_case_id === ucId && u.status === 'planned').map(u => u.team_id)
-                const teamEntries: RmTeamEntry[] = []
-                for (const teamId of plannedTeamIds) {
-                  const td = teamsData.find(t => t.team.id === teamId)
-                  if (!td) continue
-                  const dateRows = artUseCaseDates.filter(d => d.use_case_id === ucId && d.team_id === teamId)
-                  const capRows: RmCapRow[] = dateRows
-                    .filter(d => d.pilot_from || d.rollout_from || d.full_usage_from)
+              const teamGroups: RmTeamGroup[] = []
+              teamsData.forEach(td => {
+                const ucEntries: RmUcEntry[] = []
+                sortedUcIds.forEach((ucId, rank) => {
+                  if (!artUseCases.find(u => u.use_case_id === ucId && u.team_id === td.team.id && u.status === 'planned')) return
+                  const uc = useCases.find(u => u.id === ucId)!
+                  const capRows: RmCapRow[] = artUseCaseDates
+                    .filter(d => d.use_case_id === ucId && d.team_id === td.team.id && (d.pilot_from || d.rollout_from || d.full_usage_from))
                     .map(d => ({
                       capId: d.capability_id,
                       capName: capabilities.find(c => c.id === d.capability_id)?.name ?? '–',
                       pilotFrom: pd(d.pilot_from), rolloutFrom: pd(d.rollout_from), fullUsageFrom: pd(d.full_usage_from),
                     }))
-                  if (capRows.length === 0) continue
+                  if (capRows.length === 0) return
                   const allSame = capRows.length === 1 || capRows.every(r =>
                     r.pilotFrom?.toISOString() === capRows[0].pilotFrom?.toISOString() &&
                     r.rolloutFrom?.toISOString() === capRows[0].rolloutFrom?.toISOString() &&
                     r.fullUsageFrom?.toISOString() === capRows[0].fullUsageFrom?.toISOString()
                   )
-                  teamEntries.push({
-                    teamId, teamName: td.team.name, showSingle: allSame,
+                  ucEntries.push({
+                    ucId, rank: rank + 1, ucTitle: uc.title, showSingle: allSame,
                     singleDates: { pilotFrom: capRows[0].pilotFrom, rolloutFrom: capRows[0].rolloutFrom, fullUsageFrom: capRows[0].fullUsageFrom },
                     capRows: allSame ? [] : capRows,
                   })
-                }
-                if (teamEntries.length > 0) groups.push({ ucId, rank: rank + 1, teams: teamEntries })
+                })
+                if (ucEntries.length > 0) teamGroups.push({ teamId: td.team.id, teamName: td.team.name, useCases: ucEntries })
               })
 
               // Fixed range: Q1 2026 – Q4 2028
@@ -1611,7 +1961,7 @@ export default function PlanPage() {
                       <div className="absolute top-0.5 bottom-0.5 bg-brand-500 rounded-sm" style={{ left: `${einfStart}%`, width: `${einfEnd - einfStart}%` }} />
                     )}
                     {vollStart !== null && 100 > vollStart && (
-                      <div className="absolute top-0.5 bottom-0.5 bg-gray-300 rounded-sm" style={{ left: `${vollStart}%`, width: `${100 - vollStart}%` }} />
+                      <div className="absolute top-0.5 bottom-0.5 bg-blue-800 rounded-sm" style={{ left: `${vollStart}%`, width: `${100 - vollStart}%` }} />
                     )}
                   </div>
                 )
@@ -1619,10 +1969,12 @@ export default function PlanPage() {
 
               return (
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
-                  <div className="flex gap-5 mb-4 text-xs text-gray-500">
+                  <div className="flex flex-wrap gap-5 mb-4 text-xs text-gray-600">
+                    <div className="flex items-center gap-1.5"><span className="text-gray-800 text-sm leading-none select-none">◆</span><span>Meilenstein</span></div>
+                    <div className="flex items-center gap-1.5"><div className="w-4 h-3 rounded-sm bg-gray-600" /><span>Übergeordnete Phase</span></div>
                     <div className="flex items-center gap-1.5"><div className="w-4 h-3 rounded-sm bg-sky-300" /><span>Erprobung</span></div>
                     <div className="flex items-center gap-1.5"><div className="w-4 h-3 rounded-sm bg-brand-500" /><span>Einführung</span></div>
-                    <div className="flex items-center gap-1.5"><div className="w-4 h-3 rounded-sm bg-gray-300" /><span>Vollnutzung</span></div>
+                    <div className="flex items-center gap-1.5"><div className="w-4 h-3 rounded-sm bg-blue-800" /><span>Vollnutzung</span></div>
                   </div>
 
                   <div className="flex mb-1">
@@ -1640,7 +1992,7 @@ export default function PlanPage() {
                   {/* ART Maturity Bar */}
                   {matMilestones.length > 0 && (
                     <div className="flex items-center gap-2 mb-3 mt-1">
-                      <div className="w-44 shrink-0 text-[10px] text-gray-500 font-medium text-right pr-3">ART-Maturität</div>
+                      <div className="w-44 shrink-0 text-xs font-semibold text-gray-900 text-right pr-3">ART-Maturität</div>
                       <div className="flex-1 relative h-6 rounded overflow-hidden bg-gray-100">
                         {quarters.slice(1).map((q, i) => (
                           <div key={i} className="absolute top-0 bottom-0 border-l border-white/50 z-10" style={{ left: `${q.pct}%` }} />
@@ -1665,40 +2017,96 @@ export default function PlanPage() {
                     </div>
                   )}
 
-                  {groups.length === 0 && (
-                    <p className="text-gray-400 text-sm py-2">Noch keine Zeitplanungen erfasst.</p>
+                  {/* Custom timeline entries (milestones / phases) */}
+                  {timelineEntries.length > 0 && (
+                    <div className="flex items-center gap-2 mb-1 mt-1">
+                      <div className="w-44 shrink-0 text-xs font-semibold text-gray-900 text-right pr-3 truncate">Übergeordnetes</div>
+                      <div className="flex-1" />
+                    </div>
                   )}
-                  {groups.map((group, gi) => {
-                    const uc = useCases.find(u => u.id === group.ucId)!
+                  {timelineEntries.map(entry => {
+                    const isMilestone = entry.date_from === entry.date_until
+                    const fromDate = new Date(entry.date_from)
+                    const untilDate = new Date(entry.date_until)
                     return (
-                      <div key={group.ucId} className={gi > 0 ? 'mt-4' : ''}>
-                        <p className="text-xs font-semibold text-gray-700 mb-1">{group.rank}. {uc.title}</p>
-                        {group.teams.map(team => (
-                          <div key={team.teamId}>
-                            {team.showSingle ? (
-                              <div className="flex items-center gap-2 mb-1">
-                                <div className="w-44 shrink-0 text-xs text-gray-400 text-right pr-3 truncate">{team.teamName}</div>
-                                <GanttBar dates={team.singleDates} />
+                      <div key={entry.id} className="flex items-center gap-2 mb-1 group">
+                        <div className="w-44 shrink-0 relative text-xs text-gray-700 text-right pr-3 truncate">
+                          {entry.title}
+                          {editable && (
+                            <button type="button" title="Löschen"
+                              onClick={() => handleDeleteTimelineEntry(entry.id, entry.title)}
+                              className="absolute left-0 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-400 text-xs leading-none no-print transition-opacity">×</button>
+                          )}
+                        </div>
+                        <div className="flex-1 relative h-5 bg-gray-50 rounded">
+                          {quarters.slice(1).map((q, i) => (
+                            <div key={i} className="absolute top-0 bottom-0 border-l border-gray-200" style={{ left: `${q.pct}%` }} />
+                          ))}
+                          {isMilestone ? (() => {
+                            const pct = toPct(fromDate)
+                            return pct !== null ? (
+                              <div className="absolute" style={{ left: `${pct}%`, top: '50%', transform: 'translate(-50%, -50%)' }}>
+                                <span className="text-gray-900 text-base leading-none select-none">◆</span>
                               </div>
-                            ) : (
-                              <>
-                                <div className="flex items-center mb-0.5">
-                                  <div className="w-44 shrink-0 text-xs text-gray-500 font-medium text-right pr-3 truncate">{team.teamName}</div>
-                                  <div className="flex-1" />
-                                </div>
-                                {team.capRows.map(cap => (
-                                  <div key={cap.capId} className="flex items-center gap-2 mb-1">
-                                    <div className="w-44 shrink-0 text-[10px] text-gray-400 text-right pr-3 pl-3 truncate">{cap.capName}</div>
-                                    <GanttBar dates={cap} />
-                                  </div>
-                                ))}
-                              </>
-                            )}
-                          </div>
-                        ))}
+                            ) : null
+                          })() : (() => {
+                            const startPct = toPct(fromDate)
+                            const endPct = toPct(untilDate)
+                            return startPct !== null && endPct !== null ? (
+                              <div className="absolute top-0.5 bottom-0.5 bg-gray-600 rounded-sm"
+                                style={{ left: `${startPct}%`, width: `${Math.max(endPct - startPct, 0.5)}%` }} />
+                            ) : null
+                          })()}
+                        </div>
                       </div>
                     )
                   })}
+                  {editable && (
+                    <div className="flex items-center gap-2 mb-3 no-print">
+                      <div className="w-44 shrink-0 flex justify-end pr-3">
+                        <button type="button" onClick={() => { setTlTitle(''); setTlFrom(''); setTlUntil(''); setShowTimelineModal(true) }}
+                          className="text-[10px] text-brand-500 hover:text-brand-700 border border-dashed border-gray-300 hover:border-brand-400 rounded px-2 py-0.5 transition-colors">
+                          + Eintrag
+                        </button>
+                      </div>
+                      <div className="flex-1" />
+                    </div>
+                  )}
+
+                  {teamGroups.length === 0 && timelineEntries.length === 0 && (
+                    <p className="text-gray-400 text-sm py-2">Noch keine Zeitplanungen erfasst.</p>
+                  )}
+                  {teamGroups.map((tg, ti) => (
+                    <div key={tg.teamId} className={ti > 0 ? 'mt-4' : ''}>
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="w-44 shrink-0 text-xs font-semibold text-gray-900 text-right pr-3 truncate">{tg.teamName}</div>
+                        <div className="flex-1" />
+                      </div>
+                      {tg.useCases.map(ucEntry => (
+                        <div key={ucEntry.ucId}>
+                          {ucEntry.showSingle ? (
+                            <div className="flex items-center gap-2 mb-1">
+                              <div className="w-44 shrink-0 text-xs text-gray-700 text-right pr-3 truncate">{ucEntry.ucTitle}</div>
+                              <GanttBar dates={ucEntry.singleDates} />
+                            </div>
+                          ) : (
+                            <>
+                              <div className="flex items-center mb-0.5">
+                                <div className="w-44 shrink-0 text-xs text-gray-700 text-right pr-3 truncate">{ucEntry.ucTitle}</div>
+                                <div className="flex-1" />
+                              </div>
+                              {ucEntry.capRows.map(cap => (
+                                <div key={cap.capId} className="flex items-center gap-2 mb-1">
+                                  <div className="w-44 shrink-0 text-[10px] text-gray-600 text-right pr-3 pl-3 truncate">{cap.capName}</div>
+                                  <GanttBar dates={cap} />
+                                </div>
+                              ))}
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ))}
                 </div>
               )
             })()}
@@ -1711,13 +2119,13 @@ export default function PlanPage() {
                 <p className="text-gray-400 text-sm">Noch kein Potential berechenbar. Plane AI Use Cases mit Status «Geplant», Volle-Nutzung-Datum und Effizienzpotential pro Capability.</p>
               ) : (
                 <>
-                  <p className="text-xs text-gray-500 mb-4">
+                  <p className="text-xs text-gray-600 mb-4">
                     Kumulatives FTE-Einsparpotential pro Quartal, basierend auf den geplanten Use Cases, Volle-Nutzung-Daten und Effizienzpotentialen je Capability.
                   </p>
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
-                        <tr className="text-left text-gray-500 border-b border-gray-200">
+                        <tr className="text-left text-gray-600 border-b border-gray-200">
                           <th className="pb-2 font-medium pr-4">Quartal</th>
                           {teamsData.map(td => (
                             <th key={td.team.id} className="pb-2 font-medium text-center px-2">{td.team.name}</th>
@@ -1774,7 +2182,7 @@ export default function PlanPage() {
               ) : (
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs text-gray-500 mb-1">Budget 2027</p>
+                    <p className="text-xs text-gray-600 mb-1">Budget 2027</p>
                     <p className="text-xl font-bold text-gray-900">{formatCHF(art?.budget_2027 ?? null)}</p>
                   </div>
                   {editable && (
@@ -1796,7 +2204,18 @@ export default function PlanPage() {
           </CollapsibleSection>
 
           <CollapsibleSection title="Optionale Vertiefung: Skill-Matrix & Workforce (WFM)" subtitle="Kompetenzanforderungen, Lückenanalyse und Personalplanung">
-            <p className="text-sm text-gray-400 italic">Noch kein Inhalt erfasst.</p>
+            <div className="space-y-4">
+              <div className="bg-white rounded-xl border border-gray-200 p-5">
+                <SummaryTable rows={artSummary} totals={artTotals} />
+              </div>
+              {Object.keys(artCapAllocation).length > 0 && (
+                <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <h5 className="text-sm font-semibold text-gray-700 mb-2">Verteilung der Arbeitsleistung – gesamter ART</h5>
+                  <StackedBar slices={capabilities
+                    .map(cap => ({ label: cap.name, value: artCapAllocation[cap.id] ?? 0, color: cap.color ?? '#6366f1' }))} />
+                </div>
+              )}
+            </div>
           </CollapsibleSection>
 
           <CollapsibleSection title="Optionale Vertiefung: Ökonomie-Vorschau (qualitativ)" subtitle="Erwarteter Nutzen, Einsparpotenziale und Investitionsrahmen">
@@ -1853,7 +2272,7 @@ export default function PlanPage() {
                           {item.title}
                         </p>
                         {item.description && (
-                          <p className="text-xs text-gray-500 mt-0.5">{item.description}</p>
+                          <p className="text-xs text-gray-600 mt-0.5">{item.description}</p>
                         )}
                       </div>
                       {completion && (
@@ -1876,7 +2295,7 @@ export default function PlanPage() {
               <div className="bg-white rounded-xl border border-gray-200 p-5">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="text-left text-xs text-gray-500 border-b border-gray-200">
+                    <tr className="text-left text-xs text-gray-600 border-b border-gray-200">
                       <th className="pb-2 font-medium">Version</th><th className="pb-2 font-medium">Status</th>
                       <th className="pb-2 font-medium">Datum</th><th className="pb-2 font-medium">Beschreibung</th>
                     </tr>
@@ -1964,7 +2383,7 @@ const USE_CASE_STATUS_LABEL: Record<ARTUseCaseStatus, string> = {
 
 const USE_CASE_STATUS_BADGE: Record<ARTUseCaseStatus, string> = {
   planned: 'bg-blue-50 text-blue-700',
-  not_planned: 'bg-gray-100 text-gray-500',
+  not_planned: 'bg-gray-100 text-gray-600',
   not_needed: 'bg-amber-50 text-amber-700',
 }
 
@@ -1998,7 +2417,7 @@ function UseCaseView({ useCase, teams, statusRows, capabilities, capLinks, exist
               </a>
             )}
           </div>
-          {useCase.description && <p className="text-xs text-gray-500 mt-0.5">{useCase.description}</p>}
+          {useCase.description && <p className="text-xs text-gray-600 mt-0.5">{useCase.description}</p>}
         </div>
         {editable && (
           <button type="button" onClick={onEdit}
@@ -2161,7 +2580,7 @@ function UseCaseEditMode({ useCase, teams, statusRows, capLinks, capabilities, e
       <div className="flex items-start justify-between mb-4">
         <div>
           <h4 className="text-base font-semibold text-gray-900">{useCase.title}</h4>
-          {useCase.description && <p className="text-xs text-gray-500 mt-0.5">{useCase.description}</p>}
+          {useCase.description && <p className="text-xs text-gray-600 mt-0.5">{useCase.description}</p>}
         </div>
         <button type="button" onClick={onRemove}
           className="px-3 py-1.5 text-xs text-red-500 hover:text-red-700 border border-red-200 rounded-lg shrink-0 ml-3">
@@ -2206,21 +2625,21 @@ function UseCaseEditMode({ useCase, teams, statusRows, capLinks, capabilities, e
                         </div>
                         <div className="grid grid-cols-3 gap-2">
                           <div>
-                            <label htmlFor={`pilot-${useCase.id}-${s.teamId}-${d.capId}`} className="block text-[10px] text-gray-500 mb-0.5">Prüfung ab</label>
+                            <label htmlFor={`pilot-${useCase.id}-${s.teamId}-${d.capId}`} className="block text-[10px] text-gray-600 mb-0.5">Prüfung ab</label>
                             <input id={`pilot-${useCase.id}-${s.teamId}-${d.capId}`} type="date" value={d.pilot_from}
                               disabled={isDisabled}
                               onChange={e => updateDate(s.teamId, d.capId, 'pilot_from', e.target.value)}
                               className="w-full px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:bg-gray-50" />
                           </div>
                           <div>
-                            <label htmlFor={`rollout-${useCase.id}-${s.teamId}-${d.capId}`} className="block text-[10px] text-gray-500 mb-0.5">Einführung ab</label>
+                            <label htmlFor={`rollout-${useCase.id}-${s.teamId}-${d.capId}`} className="block text-[10px] text-gray-600 mb-0.5">Einführung ab</label>
                             <input id={`rollout-${useCase.id}-${s.teamId}-${d.capId}`} type="date" value={d.rollout_from}
                               disabled={isDisabled}
                               onChange={e => updateDate(s.teamId, d.capId, 'rollout_from', e.target.value)}
                               className="w-full px-2 py-1 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-brand-500 disabled:bg-gray-50" />
                           </div>
                           <div>
-                            <label htmlFor={`full-${useCase.id}-${s.teamId}-${d.capId}`} className="block text-[10px] text-gray-500 mb-0.5">Volle Nutzung ab</label>
+                            <label htmlFor={`full-${useCase.id}-${s.teamId}-${d.capId}`} className="block text-[10px] text-gray-600 mb-0.5">Volle Nutzung ab</label>
                             <input id={`full-${useCase.id}-${s.teamId}-${d.capId}`} type="date" value={d.full_usage_from}
                               disabled={isDisabled}
                               onChange={e => updateDate(s.teamId, d.capId, 'full_usage_from', e.target.value)}
@@ -2243,6 +2662,397 @@ function UseCaseEditMode({ useCase, teams, statusRows, capLinks, capabilities, e
           className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg">
           {saving ? 'Speichern…' : 'Speichern'}</button>
         <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Abbrechen</button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Use Case Plan Table ─────────────────────────────────────────────────────
+
+type PlanRow = {
+  teamId: string
+  status: ARTUseCaseStatus
+  useAllCaps: boolean
+  allDates: { pilot_from: string; rollout_from: string; full_usage_from: string }
+  capDates: Record<string, { pilot_from: string; rollout_from: string; full_usage_from: string }>
+}
+
+type UseCasePlanTableProps = {
+  useCase: AIUseCase
+  teams: Team[]
+  statusRows: ARTUseCase[]
+  capLinks: AIUseCaseCapability[]
+  capabilities: BizDevOpsCapability[]
+  existingDates: ARTUseCaseDateRow[]
+  editable: boolean
+  isEditing: boolean
+  saving: boolean
+  onEdit: () => void
+  onSave: (rows: ARTUseCase[], dateRows: { teamId: string; capId: string; pilot_from: string | null; rollout_from: string | null; full_usage_from: string | null }[]) => void
+  onRemove: () => void
+  onClose: () => void
+}
+
+const PLAN_STATUS_BADGE: Record<ARTUseCaseStatus, string> = {
+  planned: 'bg-blue-50 text-blue-700',
+  not_planned: 'bg-amber-50 text-amber-700',
+  not_needed: 'bg-gray-50 text-gray-400',
+}
+const PLAN_STATUS_LABEL: Record<ARTUseCaseStatus, string> = {
+  planned: 'Geplant',
+  not_planned: 'Nicht geplant',
+  not_needed: 'Nicht benötigt',
+}
+
+function UseCasePlanTable({
+  useCase, teams, statusRows, capLinks, capabilities, existingDates,
+  editable, isEditing, saving, onEdit, onSave, onRemove, onClose,
+}: UseCasePlanTableProps) {
+  const sortedTeams = [...teams].sort((a, b) => a.name.localeCompare(b.name, 'de'))
+  const multiCap = capLinks.length > 1
+  const hasCaps = capLinks.length > 0
+
+  const getCapName = (id: string) => capabilities.find(c => c.id === id)?.name ?? '–'
+  const getCapColor = (id: string) => capabilities.find(c => c.id === id)?.color ?? '#6366f1'
+
+  const buildRows = (): PlanRow[] => sortedTeams.map(team => {
+    const sr = statusRows.find(r => r.team_id === team.id)
+    const status: ARTUseCaseStatus = sr?.status ?? 'not_planned'
+    const tDates = existingDates.filter(d => d.team_id === team.id)
+
+    const capDates: Record<string, { pilot_from: string; rollout_from: string; full_usage_from: string }> = {}
+    capLinks.forEach(link => {
+      const d = tDates.find(dd => dd.capability_id === link.capability_id)
+      capDates[link.capability_id] = {
+        pilot_from: d?.pilot_from ?? '',
+        rollout_from: d?.rollout_from ?? '',
+        full_usage_from: d?.full_usage_from ?? '',
+      }
+    })
+
+    const capVals = Object.values(capDates)
+    const allSame = capVals.length <= 1 || capVals.every(v =>
+      v.pilot_from === capVals[0].pilot_from &&
+      v.rollout_from === capVals[0].rollout_from &&
+      v.full_usage_from === capVals[0].full_usage_from
+    )
+    const firstCapId = capLinks[0]?.capability_id
+    const allDates = firstCapId
+      ? capDates[firstCapId]
+      : { pilot_from: '', rollout_from: '', full_usage_from: '' }
+
+    return { teamId: team.id, status, useAllCaps: allSame, allDates, capDates }
+  })
+
+  const [rows, setRows] = useState<PlanRow[]>(() => buildRows())
+
+  const setStatus = (teamId: string, status: ARTUseCaseStatus) =>
+    setRows(prev => prev.map(r => r.teamId !== teamId ? r : { ...r, status }))
+
+  const setUseAllCaps = (teamId: string, val: boolean) =>
+    setRows(prev => prev.map(r => r.teamId !== teamId ? r : {
+      ...r, useAllCaps: val,
+      capDates: val
+        ? Object.fromEntries(Object.keys(r.capDates).map(k => [k, { ...r.allDates }]))
+        : r.capDates,
+    }))
+
+  const setAllDate = (teamId: string, field: 'pilot_from' | 'rollout_from' | 'full_usage_from', val: string) =>
+    setRows(prev => prev.map(r => {
+      if (r.teamId !== teamId) return r
+      const newAll = { ...r.allDates, [field]: val }
+      return {
+        ...r, allDates: newAll,
+        capDates: r.useAllCaps
+          ? Object.fromEntries(Object.keys(r.capDates).map(k => [k, { ...newAll }]))
+          : r.capDates,
+      }
+    }))
+
+  const setCapDate = (teamId: string, capId: string, field: 'pilot_from' | 'rollout_from' | 'full_usage_from', val: string) =>
+    setRows(prev => prev.map(r => r.teamId !== teamId ? r : {
+      ...r, capDates: { ...r.capDates, [capId]: { ...r.capDates[capId], [field]: val } },
+    }))
+
+  const handleSave = () => {
+    const artRows: ARTUseCase[] = rows.map(r => ({
+      id: statusRows.find(sr => sr.team_id === r.teamId)?.id ?? `new-${useCase.id}-${r.teamId}`,
+      art_id: statusRows.find(sr => sr.team_id === r.teamId)?.art_id ?? '',
+      use_case_id: useCase.id,
+      team_id: r.teamId,
+      status: r.status,
+      created_at: '',
+    }))
+    const dateRows: { teamId: string; capId: string; pilot_from: string | null; rollout_from: string | null; full_usage_from: string | null }[] = []
+    rows.forEach(r => {
+      if (r.status !== 'planned' || !hasCaps) return
+      capLinks.forEach(link => {
+        const d = r.useAllCaps ? r.allDates : r.capDates[link.capability_id]
+        dateRows.push({
+          teamId: r.teamId, capId: link.capability_id,
+          pilot_from: d?.pilot_from || null,
+          rollout_from: d?.rollout_from || null,
+          full_usage_from: d?.full_usage_from || null,
+        })
+      })
+    })
+    onSave(artRows, dateRows)
+  }
+
+  const di = (val: string, onChange: (v: string) => void, hasError?: boolean) => (
+    <input type="date" value={val} onChange={e => onChange(e.target.value)}
+      className={`w-32 px-1.5 py-0.5 border rounded text-xs focus:outline-none focus:ring-1 ${hasError ? 'border-red-300 bg-red-50 focus:ring-red-400' : 'border-gray-200 focus:ring-brand-500'}`} />
+  )
+
+  const getDatesErr = (d: { pilot_from: string; rollout_from: string; full_usage_from: string }) => ({
+    rollout_from: !!(d.pilot_from && d.rollout_from && d.pilot_from > d.rollout_from),
+    full_usage_from: !!(d.rollout_from && d.full_usage_from && d.rollout_from > d.full_usage_from),
+  })
+
+  const hasValidationErrors = rows.some(r => {
+    if (r.status !== 'planned' || !hasCaps) return false
+    const check = (d: { pilot_from: string; rollout_from: string; full_usage_from: string }) => {
+      const e = getDatesErr(d); return e.rollout_from || e.full_usage_from
+    }
+    return r.useAllCaps
+      ? check(r.allDates)
+      : capLinks.some(link => check(r.capDates[link.capability_id] ?? { pilot_from: '', rollout_from: '', full_usage_from: '' }))
+  })
+
+  const isConflict = (date: string | null | undefined) =>
+    !!(date && useCase.available_from && date < useCase.available_from)
+
+  // ── View mode ────────────────────────────────────────────────────────────────
+  if (!isEditing) {
+    const viewRows = buildRows()
+    return (
+      <div>
+        {(useCase.status || useCase.available_from) && (
+          <div className="flex items-center gap-4 mb-3 text-xs text-gray-600">
+            {useCase.status && (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="text-gray-400">Status:</span>
+                <span className="font-medium text-gray-800">{useCase.status}</span>
+              </span>
+            )}
+            {useCase.available_from && (
+              <span className="inline-flex items-center gap-1.5">
+                <span className="text-gray-400">Verfügbar ab:</span>
+                <span className="font-medium text-gray-800">{fmtDate(useCase.available_from)}</span>
+              </span>
+            )}
+          </div>
+        )}
+        <div className="overflow-x-auto rounded-xl border border-gray-200">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-[10px] text-gray-500 bg-gray-50 border-b border-gray-200">
+                <th className="px-4 py-2.5 font-semibold">Team</th>
+                <th className="px-4 py-2.5 font-semibold">Planungsstatus</th>
+                {hasCaps && <>
+                  <th className="px-4 py-2.5 font-semibold">Prüfung ab</th>
+                  <th className="px-4 py-2.5 font-semibold">Einführung ab</th>
+                  <th className="px-4 py-2.5 font-semibold">Volle Nutzung ab</th>
+                </>}
+              </tr>
+            </thead>
+            <tbody>
+              {viewRows.map((row, ri) => {
+                const team = sortedTeams.find(t => t.id === row.teamId)!
+                const isPlanned = row.status === 'planned'
+                const isNotNeeded = row.status === 'not_needed'
+                const borderClass = ri < viewRows.length - 1 ? 'border-b border-gray-100' : ''
+                const tDates = existingDates.filter(d => d.team_id === row.teamId)
+                const capVals = capLinks.map(link => tDates.find(d => d.capability_id === link.capability_id))
+                const uniformDates = capVals.length <= 1 || capVals.every(d =>
+                  (d?.pilot_from ?? null) === (capVals[0]?.pilot_from ?? null) &&
+                  (d?.rollout_from ?? null) === (capVals[0]?.rollout_from ?? null) &&
+                  (d?.full_usage_from ?? null) === (capVals[0]?.full_usage_from ?? null)
+                )
+
+                if (!isPlanned || !hasCaps) {
+                  return (
+                    <tr key={row.teamId} className={`${borderClass} ${isNotNeeded ? 'opacity-40' : ''}`}>
+                      <td className="px-4 py-2.5 font-medium text-gray-900">{team.name}</td>
+                      <td className="px-4 py-2.5">
+                        <span className={`px-2 py-0.5 rounded-full font-medium text-[10px] ${PLAN_STATUS_BADGE[row.status]}`}>
+                          {PLAN_STATUS_LABEL[row.status]}
+                        </span>
+                      </td>
+                      {hasCaps && <td colSpan={3} className="px-4 py-2.5 text-gray-300">–</td>}
+                    </tr>
+                  )
+                }
+
+                if (uniformDates) {
+                  const firstD = capVals[0]
+                  return (
+                    <tr key={row.teamId} className={`${borderClass} bg-blue-50/20`}>
+                      <td className="px-4 py-2.5 font-medium text-gray-900">{team.name}</td>
+                      <td className="px-4 py-2.5">
+                        <span className={`px-2 py-0.5 rounded-full font-medium text-[10px] ${PLAN_STATUS_BADGE['planned']}`}>Geplant</span>
+                      </td>
+                      <td className="px-4 py-2.5 tabular-nums text-gray-700">{fmtDate(firstD?.pilot_from ?? null)}</td>
+                      <td className={`px-4 py-2.5 tabular-nums font-medium ${isConflict(firstD?.rollout_from) ? 'text-red-600' : 'text-gray-700'}`}>{fmtDate(firstD?.rollout_from ?? null)}</td>
+                      <td className={`px-4 py-2.5 tabular-nums font-medium ${isConflict(firstD?.full_usage_from) ? 'text-red-600' : 'text-gray-700'}`}>{fmtDate(firstD?.full_usage_from ?? null)}</td>
+                    </tr>
+                  )
+                }
+
+                return (
+                  <Fragment key={row.teamId}>
+                    <tr className="bg-blue-50/20">
+                      <td className="px-4 pt-2.5 pb-1 font-medium text-gray-900">{team.name}</td>
+                      <td className="px-4 pt-2.5 pb-1">
+                        <span className={`px-2 py-0.5 rounded-full font-medium text-[10px] ${PLAN_STATUS_BADGE['planned']}`}>Geplant</span>
+                      </td>
+                      {hasCaps && <td colSpan={3} />}
+                    </tr>
+                    {capLinks.map((link, ci) => {
+                      const d = tDates.find(dd => dd.capability_id === link.capability_id)
+                      const isLastCap = ci === capLinks.length - 1
+                      return (
+                        <tr key={`${row.teamId}-${link.capability_id}`}
+                          className={`bg-blue-50/10 ${isLastCap && ri < viewRows.length - 1 ? 'border-b border-gray-100' : ''}`}>
+                          <td className="px-4 pb-2 pl-8 text-gray-500">
+                            <span className="inline-flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: getCapColor(link.capability_id) }} />
+                              {getCapName(link.capability_id)}
+                            </span>
+                          </td>
+                          <td />
+                          <td className="pb-2 px-4 tabular-nums text-gray-600">{fmtDate(d?.pilot_from ?? null)}</td>
+                          <td className={`pb-2 px-4 tabular-nums font-medium ${isConflict(d?.rollout_from) ? 'text-red-600' : 'text-gray-600'}`}>{fmtDate(d?.rollout_from ?? null)}</td>
+                          <td className={`pb-2 px-4 tabular-nums font-medium ${isConflict(d?.full_usage_from) ? 'text-red-600' : 'text-gray-600'}`}>{fmtDate(d?.full_usage_from ?? null)}</td>
+                        </tr>
+                      )
+                    })}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Edit mode ────────────────────────────────────────────────────────────────
+  return (
+    <div>
+      <div className="flex items-center gap-4 mb-3 text-xs text-gray-600">
+        {useCase.status && (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="text-gray-400">Status:</span>
+            <span className="font-medium text-gray-800">{useCase.status}</span>
+          </span>
+        )}
+        {useCase.available_from && (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="text-gray-400">Verfügbar ab:</span>
+            <span className="font-medium text-gray-800">{fmtDate(useCase.available_from)}</span>
+          </span>
+        )}
+      </div>
+      <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left text-[10px] text-gray-500 bg-gray-50 border-b border-gray-200">
+              <th className="px-4 py-2.5 font-semibold">Team</th>
+              <th className="px-4 py-2.5 font-semibold">Planungsstatus</th>
+              {multiCap && <th className="px-4 py-2.5 font-semibold">Capabilities</th>}
+              {hasCaps && <>
+                <th className="px-4 py-2.5 font-semibold">Prüfung ab</th>
+                <th className="px-4 py-2.5 font-semibold">Einführung ab</th>
+                <th className="px-4 py-2.5 font-semibold">Volle Nutzung ab</th>
+              </>}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, ri) => {
+              const team = sortedTeams.find(t => t.id === row.teamId)!
+              const isPlanned = row.status === 'planned'
+              const showPerCap = isPlanned && hasCaps && !row.useAllCaps
+              const borderClass = (ri < rows.length - 1 && !showPerCap) ? 'border-b border-gray-100' : ''
+              return (
+                <Fragment key={row.teamId}>
+                  <tr className={borderClass}>
+                    <td className="px-4 py-2 font-medium text-gray-900 align-top">{team.name}</td>
+                    <td className="px-4 py-2 align-top">
+                      <select value={row.status} title="Planungsstatus"
+                        onChange={e => setStatus(row.teamId, e.target.value as ARTUseCaseStatus)}
+                        className="w-36 px-2 py-1 border border-gray-200 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-brand-500">
+                        <option value="planned">Geplant</option>
+                        <option value="not_planned">Nicht geplant</option>
+                        <option value="not_needed">Nicht benötigt</option>
+                      </select>
+                    </td>
+                    {multiCap && (
+                      <td className="px-4 py-2 align-top">
+                        {isPlanned && (
+                          <label className="flex items-center gap-1.5 text-gray-600 cursor-pointer select-none whitespace-nowrap">
+                            <input type="checkbox" checked={row.useAllCaps}
+                              onChange={e => setUseAllCaps(row.teamId, e.target.checked)}
+                              className="rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
+                            Gleich für alle
+                          </label>
+                        )}
+                      </td>
+                    )}
+                    {isPlanned && hasCaps && row.useAllCaps && (() => {
+                      const err = getDatesErr(row.allDates)
+                      return <>
+                        <td className="px-4 py-2 align-top">{di(row.allDates.pilot_from, v => setAllDate(row.teamId, 'pilot_from', v))}</td>
+                        <td className="px-4 py-2 align-top">{di(row.allDates.rollout_from, v => setAllDate(row.teamId, 'rollout_from', v), err.rollout_from)}</td>
+                        <td className="px-4 py-2 align-top">{di(row.allDates.full_usage_from, v => setAllDate(row.teamId, 'full_usage_from', v), err.full_usage_from)}</td>
+                      </>
+                    })()}
+                    {(!isPlanned || !hasCaps) && hasCaps && (
+                      <td colSpan={3} className="px-4 py-2 text-gray-300">–</td>
+                    )}
+                    {isPlanned && hasCaps && !row.useAllCaps && (
+                      <td colSpan={3} />
+                    )}
+                  </tr>
+                  {showPerCap && capLinks.map((link, ci) => (
+                    <tr key={`${row.teamId}-${link.capability_id}`}
+                      className={`bg-gray-50/50 ${ci === capLinks.length - 1 && ri < rows.length - 1 ? 'border-b border-gray-100' : ''}`}>
+                      <td className="px-4 py-1.5 pl-8 text-gray-500 align-middle">
+                        <span className="inline-flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: getCapColor(link.capability_id) }} />
+                          {getCapName(link.capability_id)}
+                        </span>
+                      </td>
+                      {multiCap && <td />}
+                      {(() => {
+                        const cd = row.capDates[link.capability_id] ?? { pilot_from: '', rollout_from: '', full_usage_from: '' }
+                        const err = getDatesErr(cd)
+                        return <>
+                          <td className="py-1.5 px-4 align-middle">{di(cd.pilot_from, v => setCapDate(row.teamId, link.capability_id, 'pilot_from', v))}</td>
+                          <td className="py-1.5 px-4 align-middle">{di(cd.rollout_from, v => setCapDate(row.teamId, link.capability_id, 'rollout_from', v), err.rollout_from)}</td>
+                          <td className="py-1.5 px-4 align-middle">{di(cd.full_usage_from, v => setCapDate(row.teamId, link.capability_id, 'full_usage_from', v), err.full_usage_from)}</td>
+                        </>
+                      })()}
+                    </tr>
+                  ))}
+                </Fragment>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <div className="flex items-center gap-2 mt-3 no-print flex-wrap">
+        <button type="button" onClick={handleSave} disabled={saving || hasValidationErrors}
+          className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg">
+          {saving ? 'Speichern…' : 'Speichern'}
+        </button>
+        <button type="button" onClick={onClose}
+          className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Abbrechen</button>
+        {hasValidationErrors && (
+          <span className="text-xs text-red-500">Datumsreihenfolge prüfen: Prüfung ab → Einführung ab → Volle Nutzung ab</span>
+        )}
+        <button type="button" onClick={onRemove}
+          className="ml-auto px-4 py-2 text-sm text-red-400 hover:text-red-600">Use Case entfernen</button>
       </div>
     </div>
   )
