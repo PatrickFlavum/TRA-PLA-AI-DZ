@@ -8,7 +8,7 @@ import type {
   QualityChecklistItem, ARTQualityChecklistCompletion,
   ARTStandortbestimmung, StandortbestimmungColor,
   StandortbestimmungDimension, ARTTimelineEntry,
-  TeamType, TeamTeamType,
+  TeamType, TeamTeamType, AIUseCaseTeamType,
 } from '@/types/database'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -826,6 +826,32 @@ export async function saveUseCaseMaturityLevels(useCaseId: string, maturityLevel
     const rows = maturityLevelIds.map(maturity_level_id => ({ use_case_id: useCaseId, maturity_level_id }))
     const { error } = await supabase
       .from('ai_use_case_maturity_levels')
+      .insert(rows)
+    if (error) throw error
+  }
+}
+
+// ─── AI Use Case ↔ Team Type Links ──────────────────────────────────────
+
+export async function loadAllUseCaseTeamTypeLinks(): Promise<AIUseCaseTeamType[]> {
+  const { data, error } = await supabase
+    .from('ai_use_case_team_types')
+    .select('*')
+  if (error) throw error
+  return (data ?? []) as AIUseCaseTeamType[]
+}
+
+export async function saveUseCaseTeamTypes(useCaseId: string, teamTypeIds: string[]): Promise<void> {
+  const { error: delError } = await supabase
+    .from('ai_use_case_team_types')
+    .delete()
+    .eq('use_case_id', useCaseId)
+  if (delError) throw delError
+
+  if (teamTypeIds.length > 0) {
+    const rows = teamTypeIds.map(team_type_id => ({ use_case_id: useCaseId, team_type_id }))
+    const { error } = await supabase
+      .from('ai_use_case_team_types')
       .insert(rows)
     if (error) throw error
   }

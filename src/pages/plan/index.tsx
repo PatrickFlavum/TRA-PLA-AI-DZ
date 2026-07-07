@@ -28,6 +28,7 @@ import {
   loadStandortbestimmungDimensionen,
   loadARTTimelineEntries, createARTTimelineEntry, deleteARTTimelineEntry,
   loadTeamTypes, loadTeamTeamTypesByTeamIds, setTeamTeamTypes as saveTeamTeamTypes,
+  loadAllUseCaseTeamTypeLinks,
 } from '@/lib/supabase'
 import type {
   ART, Organization, PlanVersion, Team, TeamMember,
@@ -38,7 +39,7 @@ import type {
   QualityChecklistItem, ARTQualityChecklistCompletion,
   ARTStandortbestimmung, StandortbestimmungColor,
   StandortbestimmungDimension, ARTTimelineEntry,
-  TeamType, TeamTeamType,
+  TeamType, TeamTeamType, AIUseCaseTeamType,
 } from '@/types/database'
 
 export const getStaticProps: GetStaticProps = async () => ({ props: {} })
@@ -250,6 +251,7 @@ export default function PlanPage() {
 
   const [teamTypes, setTeamTypes] = useState<TeamType[]>([])
   const [teamTeamTypes, setTeamTeamTypes] = useState<TeamTeamType[]>([])
+  const [useCaseTeamTypeLinks, setUseCaseTeamTypeLinks] = useState<AIUseCaseTeamType[]>([])
 
   // Timeline entries
   const [timelineEntries, setTimelineEntries] = useState<ARTTimelineEntry[]>([])
@@ -310,13 +312,14 @@ export default function PlanPage() {
       setArtUseCaseRatings(ratings); setBusinessDivisions(divs)
 
       // Optionale Tabellen – laden fehlertolerant damit fehlende DB-Tabellen die Seite nicht blockieren
-      const [qcItems, qcCompletions, sb, sbDims, tlEntries, tt] = await Promise.all([
+      const [qcItems, qcCompletions, sb, sbDims, tlEntries, tt, ucTtLinks] = await Promise.all([
         loadQualityChecklistItems().catch(() => []),
         loadARTQualityChecklistCompletions(a.id).catch(() => []),
         loadARTStandortbestimmung(a.id).catch(() => []),
         loadStandortbestimmungDimensionen().catch(() => []),
         loadARTTimelineEntries(a.id).catch(() => []),
         loadTeamTypes().catch(() => []),
+        loadAllUseCaseTeamTypeLinks().catch(() => []),
       ])
       setChecklistItems(qcItems)
       setChecklistCompletions(qcCompletions)
@@ -324,6 +327,7 @@ export default function PlanPage() {
       setSbDimensions(sbDims)
       setTimelineEntries(tlEntries)
       setTeamTypes(tt)
+      setUseCaseTeamTypeLinks(ucTtLinks)
 
       const teamIds = teams.map(t => t.id)
       const [allMembers, allAllocs, ttt] = await Promise.all([loadAllTeamMembers(teamIds), loadAllTeamAllocations(teamIds), loadTeamTeamTypesByTeamIds(teamIds).catch(() => [])])
@@ -1726,7 +1730,7 @@ export default function PlanPage() {
                             <tr key={row.uc.id} className="border-b border-gray-50">
                               <td className={`py-2 text-center tabular-nums font-semibold px-3 pr-3 ${row.hasRating ? 'bg-brand-50 text-brand-700' : 'bg-gray-50 text-gray-300'}`}>{row.prioScore}</td>
                               <td className="py-2 pr-3">
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
                                   <button type="button" onClick={() => setDetailUseCaseId(row.uc.id)}
                                     className="font-medium text-brand-600 hover:text-brand-700 hover:underline text-left">
                                     {row.uc.title}
@@ -1734,6 +1738,16 @@ export default function PlanPage() {
                                   {row.uc.type === 'local' && (
                                     <span className="text-[9px] px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded-full font-medium whitespace-nowrap">lokal</span>
                                   )}
+                                  {useCaseTeamTypeLinks.filter(l => l.use_case_id === row.uc.id).map(l => {
+                                    const tt = teamTypes.find(t => t.id === l.team_type_id)
+                                    if (!tt) return null
+                                    return (
+                                      <span key={l.team_type_id} className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium text-white whitespace-nowrap"
+                                        style={{ backgroundColor: tt.color ?? '#6366f1' }}>
+                                        {tt.name}
+                                      </span>
+                                    )
+                                  })}
                                 </div>
                               </td>
                               <td className="py-2 pr-3">
@@ -1867,7 +1881,19 @@ export default function PlanPage() {
                         onClick={() => !isEditingThis && toggleUseCaseExpand(ucId)}
                       >
                         <div className="flex-1 min-w-0">
-                          <h4 className="text-base font-semibold text-gray-900">Use Case {uc.title}</h4>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="text-base font-semibold text-gray-900">Use Case {uc.title}</h4>
+                            {useCaseTeamTypeLinks.filter(l => l.use_case_id === ucId).map(l => {
+                              const tt = teamTypes.find(t => t.id === l.team_type_id)
+                              if (!tt) return null
+                              return (
+                                <span key={l.team_type_id} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium text-white"
+                                  style={{ backgroundColor: tt.color ?? '#6366f1' }}>
+                                  {tt.name}
+                                </span>
+                              )
+                            })}
+                          </div>
                           {!isExpanded && !isEditingThis && uc.description && (
                             <p className="text-xs text-gray-500 mt-0.5 truncate">{uc.description}</p>
                           )}

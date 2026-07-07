@@ -226,6 +226,17 @@ create table if not exists ai_use_case_maturity_levels (
 
 create index if not exists idx_use_case_maturity_use_case on ai_use_case_maturity_levels(use_case_id);
 
+-- ─── AI Use Case → Team-Typ-Verknüpfungen ───────────────────────────────
+
+create table if not exists ai_use_case_team_types (
+  id           uuid primary key default uuid_generate_v4(),
+  use_case_id  uuid not null references ai_use_cases(id) on delete cascade,
+  team_type_id uuid not null references team_types(id) on delete cascade,
+  unique (use_case_id, team_type_id)
+);
+
+create index if not exists idx_use_case_team_types_uc on ai_use_case_team_types(use_case_id);
+
 -- ─── Plan Versions ────────────────────────────────────────────────────────
 
 create table if not exists plan_versions (
@@ -481,6 +492,7 @@ alter table standortbestimmung_dimensionen   enable row level security;
 alter table art_standortbestimmung           enable row level security;
 alter table team_types                       enable row level security;
 alter table team_team_types                  enable row level security;
+alter table ai_use_case_team_types           enable row level security;
 
 -- ─── Policies (drop + create = idempotent) ───────────────────────────────
 
@@ -509,6 +521,7 @@ do $$ begin
   drop policy if exists "auth_all" on art_timeline_entries;
   drop policy if exists "auth_all" on team_types;
   drop policy if exists "auth_all" on team_team_types;
+  drop policy if exists "auth_all" on ai_use_case_team_types;
 end $$;
 
 create policy "auth_all" on business_divisions              for all using (true) with check (true);
@@ -535,3 +548,4 @@ create policy "auth_all" on art_standortbestimmung           for all using (true
 create policy "auth_all" on art_timeline_entries             for all using (true) with check (true);
 create policy "auth_all" on team_types                       for all using (true) with check (true);
 create policy "auth_all" on team_team_types                  for all using (true) with check (true);
+create policy "auth_all" on ai_use_case_team_types           for all using (true) with check (true);

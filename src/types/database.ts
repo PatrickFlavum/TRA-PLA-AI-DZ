@@ -153,6 +153,12 @@ export type AIUseCaseCapability = {
   efficiency_potential: number | null
 }
 
+export type AIUseCaseTeamType = {
+  id: string
+  use_case_id: string
+  team_type_id: string
+}
+
 export type AIUseCaseMaturityLevel = {
   id: string
   use_case_id: string

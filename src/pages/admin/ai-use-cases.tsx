@@ -7,8 +7,9 @@ import {
   loadCapabilities, loadAllUseCaseCapabilityLinks, saveUseCaseCapabilities,
   loadMaturityLevels, loadAllUseCaseMaturityLinks, saveUseCaseMaturityLevels,
   loadAllARTs, loadOrganizations,
+  loadTeamTypes, loadAllUseCaseTeamTypeLinks, saveUseCaseTeamTypes,
 } from '@/lib/supabase'
-import type { AIUseCase, AIUseCaseStatus, ART, BizDevOpsCapability, MaturityLevel, Organization } from '@/types/database'
+import type { AIUseCase, AIUseCaseStatus, ART, BizDevOpsCapability, MaturityLevel, Organization, TeamType } from '@/types/database'
 
 export const getStaticProps: GetStaticProps = async () => ({ props: {} })
 
@@ -35,10 +36,12 @@ export default function AIUseCasesPage() {
   const [useCases, setUseCases] = useState<AIUseCase[]>([])
   const [capabilities, setCapabilities] = useState<BizDevOpsCapability[]>([])
   const [maturityLevels, setMaturityLevels] = useState<MaturityLevel[]>([])
+  const [teamTypes, setTeamTypes] = useState<TeamType[]>([])
   const [allArts, setAllArts] = useState<ART[]>([])
   const [orgs, setOrgs] = useState<Organization[]>([])
   const [capLinks, setCapLinks] = useState<Record<string, CapEntry[]>>({})
   const [maturityLinks, setMaturityLinks] = useState<Record<string, string[]>>({})
+  const [teamTypeLinks, setTeamTypeLinks] = useState<Record<string, string[]>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -50,6 +53,7 @@ export default function AIUseCasesPage() {
   const [availableFrom, setAvailableFrom] = useState('')
   const [selectedCaps, setSelectedCaps] = useState<CapEntry[]>([])
   const [selectedMaturity, setSelectedMaturity] = useState<string[]>([])
+  const [selectedTeamTypes, setSelectedTeamTypes] = useState<string[]>([])
   const [saving, setSaving] = useState(false)
 
   const [editId, setEditId] = useState<string | null>(null)
@@ -60,16 +64,18 @@ export default function AIUseCasesPage() {
   const [editAvailableFrom, setEditAvailableFrom] = useState('')
   const [editCaps, setEditCaps] = useState<CapEntry[]>([])
   const [editMaturity, setEditMaturity] = useState<string[]>([])
+  const [editTeamTypes, setEditTeamTypes] = useState<string[]>([])
 
   const loadData = () => {
     Promise.all([
       loadAllAIUseCasesAdmin(), loadCapabilities(), loadMaturityLevels(),
       loadAllUseCaseCapabilityLinks(), loadAllUseCaseMaturityLinks(),
       loadAllARTs(), loadOrganizations(),
+      loadTeamTypes(), loadAllUseCaseTeamTypeLinks(),
     ])
-      .then(([uc, caps, ml, capLinksList, matLinksList, arts, organizations]) => {
+      .then(([uc, caps, ml, capLinksList, matLinksList, arts, organizations, tt, ttLinks]) => {
         setUseCases(uc); setCapabilities(caps); setMaturityLevels(ml)
-        setAllArts(arts); setOrgs(organizations)
+        setAllArts(arts); setOrgs(organizations); setTeamTypes(tt)
         const capMap: Record<string, CapEntry[]> = {}
         capLinksList.forEach(l => {
           if (!capMap[l.use_case_id]) capMap[l.use_case_id] = []
@@ -82,6 +88,9 @@ export default function AIUseCasesPage() {
         const matMap: Record<string, string[]> = {}
         matLinksList.forEach(l => { matMap[l.use_case_id] = [...(matMap[l.use_case_id] ?? []), l.maturity_level_id] })
         setMaturityLinks(matMap)
+        const ttMap: Record<string, string[]> = {}
+        ttLinks.forEach(l => { ttMap[l.use_case_id] = [...(ttMap[l.use_case_id] ?? []), l.team_type_id] })
+        setTeamTypeLinks(ttMap)
       })
       .catch(() => setError('Fehler beim Laden.'))
       .finally(() => setLoading(false))
@@ -126,9 +135,10 @@ export default function AIUseCasesPage() {
       await Promise.all([
         saveUseCaseCapabilities(uc.id, parseEntries(selectedCaps)),
         saveUseCaseMaturityLevels(uc.id, selectedMaturity),
+        saveUseCaseTeamTypes(uc.id, selectedTeamTypes),
       ])
       setTitle(''); setDesc(''); setLink(''); setStatus(''); setAvailableFrom('')
-      setSelectedCaps([]); setSelectedMaturity([]); setShowForm(false); loadData()
+      setSelectedCaps([]); setSelectedMaturity([]); setSelectedTeamTypes([]); setShowForm(false); loadData()
     } catch { setError('Fehler beim Erstellen.') }
     finally { setSaving(false) }
   }
@@ -146,6 +156,7 @@ export default function AIUseCasesPage() {
       await Promise.all([
         saveUseCaseCapabilities(id, parseEntries(editCaps)),
         saveUseCaseMaturityLevels(id, editMaturity),
+        saveUseCaseTeamTypes(id, editTeamTypes),
       ])
       setEditId(null); loadData()
     } catch { setError('Fehler beim Aktualisieren.') }
@@ -177,6 +188,7 @@ export default function AIUseCasesPage() {
     setEditAvailableFrom(uc.available_from ?? '')
     setEditCaps(capLinks[uc.id] ?? [])
     setEditMaturity(maturityLinks[uc.id] ?? [])
+    setEditTeamTypes(teamTypeLinks[uc.id] ?? [])
   }
 
   const renderCapabilitySelector = (
@@ -241,6 +253,29 @@ export default function AIUseCasesPage() {
     </div>
   )
 
+  const renderTeamTypeSelector = (
+    ids: string[],
+    setIds: (v: string[]) => void
+  ) => (
+    <div>
+      <span className="block text-xs font-medium text-gray-600 mb-1">Relevante Team-Typen</span>
+      <div className="flex flex-wrap gap-2">
+        {teamTypes.map(tt => {
+          const selected = ids.includes(tt.id)
+          return (
+            <button key={tt.id} type="button"
+              onClick={() => toggleMaturity(ids, setIds, tt.id)}
+              className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${selected ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}
+              style={selected ? { backgroundColor: tt.color ?? '#6366f1', borderColor: tt.color ?? '#6366f1' } : {}}>
+              {tt.name}
+            </button>
+          )
+        })}
+        {teamTypes.length === 0 && <span className="text-xs text-gray-400">Keine Team-Typen vorhanden.</span>}
+      </div>
+    </div>
+  )
+
   const renderUcCard = (uc: AIUseCase) => (
     <div key={uc.id} className="bg-white rounded-xl border border-gray-200 p-4">
       {editId === uc.id ? (
@@ -268,6 +303,7 @@ export default function AIUseCasesPage() {
           </div>
           {renderCapabilitySelector(editCaps, setEditCaps, `edit-${uc.id}`)}
           {renderMaturitySelector(editMaturity, setEditMaturity)}
+          {renderTeamTypeSelector(editTeamTypes, setEditTeamTypes)}
           <div className="flex gap-2">
             <button type="button" onClick={() => handleUpdate(uc.id)} className="text-sm text-brand-600 hover:text-brand-700 font-medium">Speichern</button>
             <button type="button" onClick={() => setEditId(null)} className="text-sm text-gray-500">Abbrechen</button>
@@ -318,6 +354,20 @@ export default function AIUseCasesPage() {
                     {entry.efficiency_potential && <span className="ml-1 text-gray-400">{entry.efficiency_potential}%</span>}
                   </span>
                 ))}
+              </div>
+            )}
+            {(teamTypeLinks[uc.id] ?? []).length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {(teamTypeLinks[uc.id] ?? []).map(ttId => {
+                  const tt = teamTypes.find(t => t.id === ttId)
+                  if (!tt) return null
+                  return (
+                    <span key={ttId} className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium text-white"
+                      style={{ backgroundColor: tt.color ?? '#6366f1' }}>
+                      {tt.name}
+                    </span>
+                  )
+                })}
               </div>
             )}
           </div>
@@ -394,6 +444,7 @@ export default function AIUseCasesPage() {
             </div>
             {renderCapabilitySelector(selectedCaps, setSelectedCaps, 'new')}
             {renderMaturitySelector(selectedMaturity, setSelectedMaturity)}
+            {renderTeamTypeSelector(selectedTeamTypes, setSelectedTeamTypes)}
             <div className="flex gap-2">
               <button type="submit" disabled={saving} className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg">
                 {saving ? 'Speichern…' : 'Speichern'}</button>
