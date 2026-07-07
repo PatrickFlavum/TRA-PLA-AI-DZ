@@ -27,6 +27,7 @@ import {
   loadARTStandortbestimmung, upsertARTStandortbestimmung,
   loadStandortbestimmungDimensionen,
   loadARTTimelineEntries, createARTTimelineEntry, deleteARTTimelineEntry,
+  loadTeamTypes, loadTeamTeamTypesByTeamIds, setTeamTeamTypes as saveTeamTeamTypes,
 } from '@/lib/supabase'
 import type {
   ART, Organization, PlanVersion, Team, TeamMember,
@@ -37,6 +38,7 @@ import type {
   QualityChecklistItem, ARTQualityChecklistCompletion,
   ARTStandortbestimmung, StandortbestimmungColor,
   StandortbestimmungDimension, ARTTimelineEntry,
+  TeamType, TeamTeamType,
 } from '@/types/database'
 
 export const getStaticProps: GetStaticProps = async () => ({ props: {} })
@@ -216,6 +218,11 @@ export default function PlanPage() {
   const [editingPotentiale, setEditingPotentiale] = useState(false)
   const [ratingEdits, setRatingEdits] = useState<Record<string, { nutzen: number; skalierbarkeit: number; akzeptanz: number }>>({})
   const [editPlannedApproach, setEditPlannedApproach] = useState('')
+  const [editingPlannedApproach, setEditingPlannedApproach] = useState(false)
+  const [editingArtPotentials, setEditingArtPotentials] = useState(false)
+  const [editBenefitPotential, setEditBenefitPotential] = useState('')
+  const [editScalingPotential, setEditScalingPotential] = useState('')
+  const [editGeneralAcceptance, setEditGeneralAcceptance] = useState('')
   const [budget2027, setBudget2027] = useState('')
   const [showCheckIn, setShowCheckIn] = useState(false)
   const [changeDesc, setChangeDesc] = useState('')
@@ -240,6 +247,9 @@ export default function PlanPage() {
   const [editLocalUcAvailFrom, setEditLocalUcAvailFrom] = useState('')
   const [editLocalUcCaps, setEditLocalUcCaps] = useState<LocalCapEntry[]>([])
   const [editLocalUcMaturity, setEditLocalUcMaturity] = useState<string[]>([])
+
+  const [teamTypes, setTeamTypes] = useState<TeamType[]>([])
+  const [teamTeamTypes, setTeamTeamTypes] = useState<TeamTeamType[]>([])
 
   // Timeline entries
   const [timelineEntries, setTimelineEntries] = useState<ARTTimelineEntry[]>([])
@@ -300,21 +310,24 @@ export default function PlanPage() {
       setArtUseCaseRatings(ratings); setBusinessDivisions(divs)
 
       // Optionale Tabellen – laden fehlertolerant damit fehlende DB-Tabellen die Seite nicht blockieren
-      const [qcItems, qcCompletions, sb, sbDims, tlEntries] = await Promise.all([
+      const [qcItems, qcCompletions, sb, sbDims, tlEntries, tt] = await Promise.all([
         loadQualityChecklistItems().catch(() => []),
         loadARTQualityChecklistCompletions(a.id).catch(() => []),
         loadARTStandortbestimmung(a.id).catch(() => []),
         loadStandortbestimmungDimensionen().catch(() => []),
         loadARTTimelineEntries(a.id).catch(() => []),
+        loadTeamTypes().catch(() => []),
       ])
       setChecklistItems(qcItems)
       setChecklistCompletions(qcCompletions)
       setStandortbestimmung(sb)
       setSbDimensions(sbDims)
       setTimelineEntries(tlEntries)
+      setTeamTypes(tt)
 
       const teamIds = teams.map(t => t.id)
-      const [allMembers, allAllocs] = await Promise.all([loadAllTeamMembers(teamIds), loadAllTeamAllocations(teamIds)])
+      const [allMembers, allAllocs, ttt] = await Promise.all([loadAllTeamMembers(teamIds), loadAllTeamAllocations(teamIds), loadTeamTeamTypesByTeamIds(teamIds).catch(() => [])])
+      setTeamTeamTypes(ttt)
       setTeamsData(teams.map(t => ({
         team: t,
         members: allMembers.filter(m => m.team_id === t.id),
@@ -400,6 +413,36 @@ export default function PlanPage() {
     finally { setSaving(false) }
   }
 
+  const handleSavePlannedApproach = async () => {
+    if (!art) return
+    setSaving(true)
+    try {
+      await updateART(art.id, { planned_approach: editPlannedApproach || null })
+      setArt({ ...art, planned_approach: editPlannedApproach || null })
+      setEditingPlannedApproach(false)
+    } catch { setError('Fehler beim Speichern.') }
+    setSaving(false)
+  }
+
+  const handleSaveArtPotentials = async () => {
+    if (!art) return
+    setSaving(true)
+    try {
+      await updateART(art.id, {
+        general_benefit_potential: editBenefitPotential || null,
+        general_scaling_potential: editScalingPotential || null,
+        general_acceptance: editGeneralAcceptance || null,
+      })
+      setArt({ ...art,
+        general_benefit_potential: editBenefitPotential || null,
+        general_scaling_potential: editScalingPotential || null,
+        general_acceptance: editGeneralAcceptance || null,
+      })
+      setEditingArtPotentials(false)
+    } catch { setError('Fehler beim Speichern.') }
+    setSaving(false)
+  }
+
   const handleCancelPotentialeEdit = () => {
     setEditingPotentiale(false)
     setEditPlannedApproach(art?.planned_approach ?? '')
@@ -450,10 +493,11 @@ export default function PlanPage() {
     } catch { setError('Fehler beim Erstellen des Teams.') }
   }
 
-  const handleSaveTeam = async (teamId: string, name: string, description: string | null) => {
+  const handleSaveTeam = async (teamId: string, name: string, description: string | null, challenges: string | null, typeIds: string[]) => {
     setSaving(true)
     try {
-      await updateTeam(teamId, { name, description })
+      await updateTeam(teamId, { name, description, challenges })
+      await saveTeamTeamTypes(teamId, typeIds)
       const td = teamsData.find(t => t.team.id === teamId)
       if (td) {
         const total = Object.values(td.allocations).reduce((s, v) => s + v, 0)
@@ -1260,7 +1304,7 @@ export default function PlanPage() {
           </CollapsibleSection>
 
           {/* ══════ STANDORTBESTIMMUNG ════════════════════════════════════ */}
-          <CollapsibleSection title="Standortbestimmung" subtitle="Erfolgsfaktoren für die Transformation und wo wir aktuell stehen">
+          <CollapsibleSection title="Standortbestimmung Transformation" subtitle="Aktueller Zustand der 10 Faktoren für eine erfolgreiche Transformation">
             {(() => {
               const sbMap = new Map(standortbestimmung.map(s => [s.dimension_key, s]))
               const isEditing = editingStandortbestimmung
@@ -1421,6 +1465,7 @@ export default function PlanPage() {
                   <div key={td.team.id} className="bg-white rounded-xl border border-gray-200 p-5 print-no-break">
                     {isEditingThis ? (
                       <TeamEditMode teamData={td} roles={roles} capabilities={capabilities} saving={saving}
+                        teamTypes={teamTypes} initTypeIds={teamTeamTypes.filter(x => x.team_id === td.team.id).map(x => x.team_type_id)}
                         onSave={handleSaveTeam} onDeleteTeam={handleDeleteTeam}
                         onAddMember={(m) => handleAddMember(td.team.id, m)} onDeleteMember={handleDeleteMember}
                         onAllocChange={(capId, val) => handleAllocChange(td.team.id, capId, val)} onClose={() => setEditingTeamId(null)} />
@@ -1428,7 +1473,19 @@ export default function PlanPage() {
                       <>
                         <div className="flex items-start justify-between cursor-pointer" onClick={() => toggleTeamExpand(td.team.id)}>
                           <div>
-                            <h4 className="text-base font-semibold text-gray-900">{td.team.name}</h4>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="text-base font-semibold text-gray-900">{td.team.name}</h4>
+                              {teamTeamTypes.filter(ttt => ttt.team_id === td.team.id).map(ttt => {
+                                const typ = teamTypes.find(x => x.id === ttt.team_type_id)
+                                if (!typ) return null
+                                return (
+                                  <span key={ttt.id} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium text-white"
+                                    style={{ backgroundColor: typ.color ?? '#6366f1' }}>
+                                    {typ.name}
+                                  </span>
+                                )
+                              })}
+                            </div>
                             {td.team.description && <p className="text-xs text-gray-600 mt-0.5">{td.team.description}</p>}
                           </div>
                           <div className="flex items-center gap-2 shrink-0 ml-3">
@@ -1445,8 +1502,15 @@ export default function PlanPage() {
                         <h5 className="text-sm font-semibold text-gray-700 mt-6 mb-2">Team-Zusammenstellung</h5>
                         <SummaryTable rows={teamSummary} totals={teamTotals} />
                         {hasAnyAllocation && (
-                          <div className="mt-6"><h5 className="text-sm font-semibold text-gray-700 mb-2">BizDevOps Kapazitätsverteilung</h5><StackedBar slices={allocSlices} /></div>
+                          <div className="mt-6"><h5 className="text-sm font-semibold text-gray-700 mb-2">Kapazitätsverteilung auf Capabilities</h5><StackedBar slices={allocSlices} /></div>
                         )}
+                        {td.team.challenges && (
+                          <div className="mt-6">
+                            <h5 className="text-sm font-semibold text-gray-700 mb-1">Aktuelle Herausforderungen/Chancen im Workflow dieses Teams</h5>
+                            <p className="text-sm text-gray-700 whitespace-pre-wrap">{td.team.challenges}</p>
+                          </div>
+                        )}
+                        {/* Geplante AI Use Cases – ausgeblendet, ggf. später wieder aktivieren
                         {(() => {
                           type UcRow = { ucTitle: string; capId: string; pilot_from: string | null; rollout_from: string | null; full_usage_from: string | null }
                           const plannedRows: UcRow[] = []
@@ -1511,6 +1575,7 @@ export default function PlanPage() {
                             </div>
                           )
                         })()}
+                        */}
                         </>}
                       </>
                     )}
@@ -1542,7 +1607,7 @@ export default function PlanPage() {
 
 
           {/* ══════ USE CASE POTENTIALE ═══════════════════════════════════ */}
-          <CollapsibleSection title="Diagnose Teil 2 – Potenziale" subtitle="Rangliste aller Use Cases nach Prio">
+          <CollapsibleSection title="Diagnose Teil 2 – Potenziale" subtitle="Use Case Bewertungen und Potenzialbeschreibungen">
             {(() => {
               type UcRankRow = {
                 uc: AIUseCase
@@ -1699,23 +1764,6 @@ export default function PlanPage() {
                     </div>
                   )}
 
-                  {/* ── Geplantes Vorgehen ── */}
-                  <div className="mt-6 pt-4 border-t border-gray-100">
-                    <h5 className="text-sm font-semibold text-gray-700 mb-1">Geplantes Vorgehen</h5>
-                    {editingPotentiale ? (
-                      <>
-                        <p className="text-[10px] text-gray-400 mb-2">Wie ist das grundlegende Vorgehen geplant – Use Case mit der höchsten Prio zuerst, oder gleich mehrere Use Cases gleichzeitig angehen? Welche werden konkret angegangen, welche (noch) nicht?</p>
-                        <textarea value={editPlannedApproach} onChange={e => setEditPlannedApproach(e.target.value)} rows={5}
-                          placeholder="Beschreibung des geplanten Vorgehens…"
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
-                      </>
-                    ) : art.planned_approach ? (
-                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{art.planned_approach}</p>
-                    ) : (
-                      <p className="text-xs text-gray-400 italic">Noch nicht beschrieben.</p>
-                    )}
-                  </div>
-
                   {editingPotentiale && (
                     <div className="flex gap-2 mt-4 no-print">
                       <button type="button" onClick={handleSavePotentiale} disabled={saving}
@@ -1729,6 +1777,58 @@ export default function PlanPage() {
                 </div>
               )
             })()}
+
+            {/* ── Generelle Potenzialfelder ── */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-4 no-print">
+                <h5 className="text-sm font-semibold text-gray-700">Generelle Einschätzungen</h5>
+                {editable && !editingArtPotentials && (
+                  <button type="button"
+                    onClick={() => {
+                      setEditBenefitPotential(art?.general_benefit_potential ?? '')
+                      setEditScalingPotential(art?.general_scaling_potential ?? '')
+                      setEditGeneralAcceptance(art?.general_acceptance ?? '')
+                      setEditingArtPotentials(true)
+                    }}
+                    className="px-3 py-1.5 border border-gray-200 text-xs text-brand-600 hover:bg-brand-50 font-medium rounded-lg no-print">
+                    Bearbeiten
+                  </button>
+                )}
+              </div>
+              <div className="space-y-5">
+                {([
+                  { label: 'Generelles Nutzenpotenzial', hint: 'Wie wird gesamtheitlich der pot. Nutzen von AI in diesem ART bewertet?', val: editingArtPotentials ? editBenefitPotential : art?.general_benefit_potential, set: setEditBenefitPotential },
+                  { label: 'Generelles Skalierungspotenzial', hint: 'Wie wird gesamtheitlich der pot. Skalierung – also Wiederverwendung von AI Use Cases – in diesem ART bewertet?', val: editingArtPotentials ? editScalingPotential : art?.general_scaling_potential, set: setEditScalingPotential },
+                  { label: 'Generelle Akzeptanz', hint: 'Wie wird generelle Akzeptanz von AI im ART bewertet?', val: editingArtPotentials ? editGeneralAcceptance : art?.general_acceptance, set: setEditGeneralAcceptance },
+                ] as { label: string; hint: string; val: string | null | undefined; set: (v: string) => void }[]).map(field => (
+                  <div key={field.label}>
+                    <p className="text-xs font-semibold text-gray-700 mb-1">{field.label}</p>
+                    {editingArtPotentials ? (
+                      <>
+                        <p className="text-[10px] text-gray-400 mb-1">{field.hint}</p>
+                        <textarea value={field.val ?? ''} onChange={e => field.set(e.target.value)} rows={3}
+                          placeholder={`${field.label}…`}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                      </>
+                    ) : field.val ? (
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{field.val}</p>
+                    ) : (
+                      <p className="text-xs text-gray-400 italic">Noch nicht beschrieben.</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {editingArtPotentials && (
+                <div className="flex gap-2 mt-4 no-print">
+                  <button type="button" onClick={handleSaveArtPotentials} disabled={saving}
+                    className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg">
+                    {saving ? 'Speichern…' : 'Speichern'}
+                  </button>
+                  <button type="button" onClick={() => setEditingArtPotentials(false)}
+                    className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Abbrechen</button>
+                </div>
+              )}
+            </div>
           </CollapsibleSection>
 
           {/* ══════ USE CASE PLANUNG ══════════════════════════════════════ */}
@@ -1844,6 +1944,42 @@ export default function PlanPage() {
 
           {/* ══════ ROADMAP ═══════════════════════════════════════════════ */}
           <CollapsibleSection title="Planung Teil 2 – Roadmap" subtitle="Zeitplan mit Meilensteinen und Übersicht über die Erprobung, Einführung und Nutzung der Use Cases">
+            <div className="space-y-5">
+
+            {/* ── Geplantes Vorgehen ── */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-2 no-print">
+                <h5 className="text-sm font-semibold text-gray-700">Geplantes Vorgehen</h5>
+                {editable && !editingPlannedApproach && (
+                  <button type="button"
+                    onClick={() => { setEditPlannedApproach(art?.planned_approach ?? ''); setEditingPlannedApproach(true) }}
+                    className="px-3 py-1.5 border border-gray-200 text-xs text-brand-600 hover:bg-brand-50 font-medium rounded-lg no-print">
+                    Bearbeiten
+                  </button>
+                )}
+              </div>
+              {editingPlannedApproach ? (
+                <>
+                  <p className="text-[10px] text-gray-400 mb-2">Wie ist das grundlegende Vorgehen geplant – Use Case mit der höchsten Prio zuerst, oder gleich mehrere Use Cases gleichzeitig angehen? Welche werden konkret angegangen, welche (noch) nicht?</p>
+                  <textarea value={editPlannedApproach} onChange={e => setEditPlannedApproach(e.target.value)} rows={5}
+                    placeholder="Beschreibung des geplanten Vorgehens…"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                  <div className="flex gap-2 mt-3 no-print">
+                    <button type="button" onClick={handleSavePlannedApproach} disabled={saving}
+                      className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg">
+                      {saving ? 'Speichern…' : 'Speichern'}
+                    </button>
+                    <button type="button" onClick={() => setEditingPlannedApproach(false)}
+                      className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Abbrechen</button>
+                  </div>
+                </>
+              ) : art.planned_approach ? (
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">{art.planned_approach}</p>
+              ) : (
+                <p className="text-xs text-gray-400 italic">Noch nicht beschrieben.</p>
+              )}
+            </div>
+
             {(() => {
               const sqEnd = (d: Date) => new Date(d.getFullYear(), Math.floor(d.getMonth() / 3) * 3 + 3, 0)
 
@@ -2110,6 +2246,8 @@ export default function PlanPage() {
                 </div>
               )
             })()}
+
+            </div>
           </CollapsibleSection>
 
           {/* ══════ POTENTIALANALYSE (ausgeblendet) ══════════════════════ */}
@@ -2334,18 +2472,25 @@ export default function PlanPage() {
 
 type TeamEditModeProps = {
   teamData: TeamData; roles: EmployeeRole[]; capabilities: BizDevOpsCapability[]; saving: boolean
-  onSave: (teamId: string, name: string, desc: string | null) => void
+  teamTypes: TeamType[]; initTypeIds: string[]
+  onSave: (teamId: string, name: string, desc: string | null, challenges: string | null, typeIds: string[]) => void
   onDeleteTeam: (id: string, name: string) => void
   onAddMember: (m: Pick<TeamMember, 'role_id' | 'type' | 'category' | 'fte' | 'headcount'>) => void
   onDeleteMember: (id: string) => void; onAllocChange: (capId: string, val: number) => void; onClose: () => void
 }
 
-function TeamEditMode({ teamData, roles, capabilities, saving, onSave, onDeleteTeam, onAddMember, onDeleteMember, onAllocChange, onClose }: TeamEditModeProps) {
+function TeamEditMode({ teamData, roles, capabilities, saving, teamTypes, initTypeIds, onSave, onDeleteTeam, onAddMember, onDeleteMember, onAllocChange, onClose }: TeamEditModeProps) {
   const { team, members, allocations } = teamData
   const [editName, setEditName] = useState(team.name)
   const [editDesc, setEditDesc] = useState(team.description ?? '')
+  const [editChallenges, setEditChallenges] = useState(team.challenges ?? '')
+  const [selectedTypeIds, setSelectedTypeIds] = useState<string[]>(initTypeIds)
   const totalAlloc = Object.values(allocations).reduce((s, v) => s + v, 0)
   const allocOk = totalAlloc === 100 || totalAlloc === 0
+
+  const toggleType = (id: string) => setSelectedTypeIds(prev =>
+    prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+  )
 
   return (
     <div>
@@ -2353,7 +2498,7 @@ function TeamEditMode({ teamData, roles, capabilities, saving, onSave, onDeleteT
         <h4 className="text-base font-semibold text-gray-900">Team bearbeiten</h4>
         <button type="button" onClick={() => onDeleteTeam(team.id, team.name)} className="px-3 py-1.5 text-xs text-red-500 hover:text-red-700 border border-red-200 rounded-lg">Team löschen</button>
       </div>
-      <div className="grid grid-cols-2 gap-3 mb-6">
+      <div className="grid grid-cols-2 gap-3 mb-4">
         <div><label htmlFor={`tn-${team.id}`} className="block text-xs font-medium text-gray-600 mb-1">Name</label>
           <input id={`tn-${team.id}`} value={editName} onChange={e => setEditName(e.target.value)}
             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" /></div>
@@ -2361,11 +2506,34 @@ function TeamEditMode({ teamData, roles, capabilities, saving, onSave, onDeleteT
           <input id={`td-${team.id}`} value={editDesc} onChange={e => setEditDesc(e.target.value)} placeholder="Optional"
             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" /></div>
       </div>
+      {teamTypes.length > 0 && (
+        <div className="mb-5">
+          <label className="block text-xs font-medium text-gray-600 mb-2">Teamtyp</label>
+          <div className="flex flex-wrap gap-2">
+            {teamTypes.map(tt => {
+              const checked = selectedTypeIds.includes(tt.id)
+              return (
+                <button key={tt.id} type="button" onClick={() => toggleType(tt.id)}
+                  className={`inline-flex items-center px-3 py-1 rounded text-xs font-medium border transition-all ${checked ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}
+                  style={checked ? { backgroundColor: tt.color ?? '#6366f1', borderColor: tt.color ?? '#6366f1' } : {}}>
+                  {!checked && <span className="w-2.5 h-2.5 rounded-full mr-1.5 shrink-0" style={{ backgroundColor: tt.color ?? '#6366f1' }} />}
+                  {tt.name}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      )}
       <h5 className="text-xs font-semibold text-gray-600 mb-2">Mitarbeitende</h5>
       <TeamMemberTable members={members} roles={roles} onAdd={onAddMember} onDelete={onDeleteMember} />
       {capabilities.length > 0 && <div className="mt-6"><CapabilitySliders capabilities={capabilities} allocations={allocations} onChange={onAllocChange} /></div>}
+      <div className="mt-5">
+        <label htmlFor={`tc-${team.id}`} className="block text-xs font-medium text-gray-600 mb-1">Aktuelle Herausforderungen/Chancen im Workflow dieses Teams</label>
+        <textarea id={`tc-${team.id}`} value={editChallenges} onChange={e => setEditChallenges(e.target.value)} rows={3} placeholder="Optional"
+          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500 resize-y" />
+      </div>
       <div className="flex gap-2 mt-6 pt-4 border-t border-gray-100">
-        <button type="button" onClick={() => onSave(team.id, editName.trim() || team.name, editDesc.trim() || null)} disabled={saving || !allocOk}
+        <button type="button" onClick={() => onSave(team.id, editName.trim() || team.name, editDesc.trim() || null, editChallenges.trim() || null, selectedTypeIds)} disabled={saving || !allocOk}
           className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg">{saving ? 'Speichern…' : 'Speichern'}</button>
         <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Abbrechen</button>
       </div>

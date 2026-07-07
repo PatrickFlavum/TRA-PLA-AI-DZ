@@ -34,6 +34,9 @@ export type ART = {
   guidance_mode_reason: string | null
   current_maturity_level_id: string | null
   planned_approach: string | null
+  general_benefit_potential: string | null
+  general_scaling_potential: string | null
+  general_acceptance: string | null
   created_at: string
 }
 
@@ -79,7 +82,23 @@ export type Team = {
   art_id: string
   name: string
   description: string | null
+  challenges: string | null
   sort_order: number
+  created_at: string
+}
+
+export type TeamType = {
+  id: string
+  name: string
+  color: string | null
+  sort_order: number
+  created_at: string
+}
+
+export type TeamTeamType = {
+  id: string
+  team_id: string
+  team_type_id: string
   created_at: string
 }
 

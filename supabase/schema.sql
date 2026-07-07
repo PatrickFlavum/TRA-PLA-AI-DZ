@@ -62,6 +62,9 @@ create table if not exists arts (
   cyber_criticality_reason text,
   guidance_mode_reason     text,
   planned_approach         text,
+  general_benefit_potential text,
+  general_scaling_potential text,
+  general_acceptance        text,
   current_maturity_level_id uuid,       -- FK gesetzt nach maturity_levels (siehe unten)
   created_at               timestamptz  not null default now()
 );
@@ -78,6 +81,9 @@ alter table arts add column if not exists cyber_criticality        text;
 alter table arts add column if not exists cyber_criticality_reason text;
 alter table arts add column if not exists guidance_mode_reason     text;
 alter table arts add column if not exists planned_approach         text;
+alter table arts add column if not exists general_benefit_potential text;
+alter table arts add column if not exists general_scaling_potential text;
+alter table arts add column if not exists general_acceptance        text;
 alter table arts add column if not exists current_maturity_level_id uuid;
 
 -- cyber_criticality CHECK: idempotent via do-Block (funktioniert auch bei bestehender Spalte ohne Constraint)
@@ -428,6 +434,28 @@ create table if not exists art_timeline_entries (
 
 create index if not exists idx_art_timeline_entries_art on art_timeline_entries(art_id);
 
+-- ─── Team Types ───────────────────────────────────────────────────────────
+
+create table if not exists team_types (
+  id         uuid        primary key default uuid_generate_v4(),
+  name       text        not null,
+  color      text,
+  sort_order integer     not null default 0,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists team_team_types (
+  id           uuid        primary key default uuid_generate_v4(),
+  team_id      uuid        not null references teams(id) on delete cascade,
+  team_type_id uuid        not null references team_types(id) on delete cascade,
+  created_at   timestamptz not null default now(),
+  unique (team_id, team_type_id)
+);
+
+create index if not exists idx_team_team_types_team on team_team_types(team_id);
+
+alter table teams add column if not exists challenges text;
+
 -- ─── Row Level Security ───────────────────────────────────────────────────
 
 alter table business_divisions              enable row level security;
@@ -451,6 +479,8 @@ alter table quality_checklist_items        enable row level security;
 alter table art_quality_checklist_completions enable row level security;
 alter table standortbestimmung_dimensionen   enable row level security;
 alter table art_standortbestimmung           enable row level security;
+alter table team_types                       enable row level security;
+alter table team_team_types                  enable row level security;
 
 -- ─── Policies (drop + create = idempotent) ───────────────────────────────
 
@@ -477,6 +507,8 @@ do $$ begin
   drop policy if exists "auth_all" on standortbestimmung_dimensionen;
   drop policy if exists "auth_all" on art_standortbestimmung;
   drop policy if exists "auth_all" on art_timeline_entries;
+  drop policy if exists "auth_all" on team_types;
+  drop policy if exists "auth_all" on team_team_types;
 end $$;
 
 create policy "auth_all" on business_divisions              for all using (true) with check (true);
@@ -501,3 +533,5 @@ create policy "auth_all" on art_quality_checklist_completions for all using (tru
 create policy "auth_all" on standortbestimmung_dimensionen   for all using (true) with check (true);
 create policy "auth_all" on art_standortbestimmung           for all using (true) with check (true);
 create policy "auth_all" on art_timeline_entries             for all using (true) with check (true);
+create policy "auth_all" on team_types                       for all using (true) with check (true);
+create policy "auth_all" on team_team_types                  for all using (true) with check (true);

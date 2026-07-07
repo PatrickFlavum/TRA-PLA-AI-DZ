@@ -88,6 +88,9 @@ export function AdminLayout({ children, title }: Props) {
             <Link href="/admin/standortbestimmung" className="text-xs text-gray-500 hover:text-gray-800 transition-colors">
               Standortbestimmung
             </Link>
+            <Link href="/admin/team-types" className="text-xs text-gray-500 hover:text-gray-800 transition-colors">
+              Team-Typen
+            </Link>
             <button
               type="button"
               onClick={handleLogout}

@@ -8,6 +8,7 @@ import type {
   QualityChecklistItem, ARTQualityChecklistCompletion,
   ARTStandortbestimmung, StandortbestimmungColor,
   StandortbestimmungDimension, ARTTimelineEntry,
+  TeamType, TeamTeamType,
 } from '@/types/database'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -191,7 +192,7 @@ export async function createART(
 
 export async function updateART(
   id: string,
-  params: Partial<Pick<ART, 'name' | 'description' | 'mission_statement' | 'business_context' | 'risks' | 'budget_2027' | 'guidance_mode_id' | 'art_leadership' | 'responsible_person' | 'cyber_criticality' | 'cyber_criticality_reason' | 'guidance_mode_reason' | 'current_maturity_level_id' | 'planned_approach'>>
+  params: Partial<Pick<ART, 'name' | 'description' | 'mission_statement' | 'business_context' | 'risks' | 'budget_2027' | 'guidance_mode_id' | 'art_leadership' | 'responsible_person' | 'cyber_criticality' | 'cyber_criticality_reason' | 'guidance_mode_reason' | 'current_maturity_level_id' | 'planned_approach' | 'general_benefit_potential' | 'general_scaling_potential' | 'general_acceptance'>>
 ): Promise<void> {
   const { error } = await supabase
     .from('arts')
@@ -392,7 +393,7 @@ export async function createTeam(
 
 export async function updateTeam(
   id: string,
-  params: Partial<Pick<Team, 'name' | 'description'>>
+  params: Partial<Pick<Team, 'name' | 'description' | 'challenges'>>
 ): Promise<void> {
   const { error } = await supabase
     .from('teams')
@@ -406,6 +407,69 @@ export async function deleteTeam(id: string): Promise<void> {
     .from('teams')
     .delete()
     .eq('id', id)
+  if (error) throw error
+}
+
+// ─── Team Types ──────────────────────────────────────────────────────────────
+
+export async function loadTeamTypes(): Promise<TeamType[]> {
+  const { data, error } = await supabase
+    .from('team_types')
+    .select('*')
+    .order('sort_order')
+  if (error) throw error
+  return (data ?? []) as TeamType[]
+}
+
+export async function createTeamType(name: string, color: string): Promise<TeamType> {
+  const { data: maxData } = await supabase
+    .from('team_types')
+    .select('sort_order')
+    .order('sort_order', { ascending: false })
+    .limit(1)
+    .single()
+  const sort_order = (maxData?.sort_order ?? 0) + 1
+  const { data, error } = await supabase
+    .from('team_types')
+    .insert({ name, color, sort_order })
+    .select()
+    .single()
+  if (error) throw error
+  return data as TeamType
+}
+
+export async function updateTeamType(id: string, params: Partial<Pick<TeamType, 'name' | 'color' | 'sort_order'>>): Promise<void> {
+  const { error } = await supabase
+    .from('team_types')
+    .update(params)
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function deleteTeamType(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('team_types')
+    .delete()
+    .eq('id', id)
+  if (error) throw error
+}
+
+export async function loadTeamTeamTypesByTeamIds(teamIds: string[]): Promise<TeamTeamType[]> {
+  if (teamIds.length === 0) return []
+  const { data, error } = await supabase
+    .from('team_team_types')
+    .select('*')
+    .in('team_id', teamIds)
+  if (error) throw error
+  return (data ?? []) as TeamTeamType[]
+}
+
+export async function setTeamTeamTypes(teamId: string, typeIds: string[]): Promise<void> {
+  await supabase.from('team_team_types').delete().eq('team_id', teamId)
+  if (typeIds.length === 0) return
+  const { error } = await supabase
+    .from('team_team_types')
+    .insert(typeIds.map(team_type_id => ({ team_id: teamId, team_type_id })))
   if (error) throw error
 }
 
