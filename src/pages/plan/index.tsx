@@ -2675,8 +2675,8 @@ const AI_MOTIVATION_LABELS: Record<number, string> = {
 }
 
 function AIRadarChart({ faehigkeiten, zugang, motivation }: { faehigkeiten: number; zugang: number; motivation: number }) {
-  const cx = 190, cy = 135, maxR = 96, levels = 5
-  // angles: top (AI-Fähigkeiten), bottom-right (AI-Zugang), bottom-left (AI-Motivation)
+  // maxR gross relativ zur viewBox → Dreieck füllt mehr Fläche → erscheint größer auf dem Bildschirm
+  const cx = 155, cy = 128, maxR = 96, levels = 5
   const angles = [-Math.PI / 2, Math.PI / 6, (5 * Math.PI) / 6]
   const values = [faehigkeiten, zugang, motivation]
 
@@ -2691,15 +2691,15 @@ function AIRadarChart({ faehigkeiten, zugang, motivation }: { faehigkeiten: numb
   const dataPolygon = angles.map((a, i) => pt(a, values[i]).join(',')).join(' ')
   const axisEnds = angles.map(a => pt(a, levels))
 
-  // Labels well outside max-radius to never overlap value numbers
+  // Labels: oben=über dem Eckpunkt, seitliche=unterhalb der Eckpunkte (kein Clipping)
   const labelProps = [
-    { x: axisEnds[0][0], y: axisEnds[0][1] - 20, anchor: 'middle' as const, label: 'AI-Fähigkeiten' },
-    { x: axisEnds[1][0] + 18, y: axisEnds[1][1], anchor: 'start' as const, label: 'AI-Zugang' },
-    { x: axisEnds[2][0] - 18, y: axisEnds[2][1], anchor: 'end' as const, label: 'AI-Motivation' },
+    { x: axisEnds[0][0], y: axisEnds[0][1] - 13, anchor: 'middle' as const, label: 'AI-Fähigkeiten' },
+    { x: axisEnds[1][0], y: axisEnds[1][1] + 16, anchor: 'middle' as const, label: 'AI-Zugang' },
+    { x: axisEnds[2][0], y: axisEnds[2][1] + 16, anchor: 'middle' as const, label: 'AI-Motivation' },
   ]
 
   return (
-    <svg viewBox="0 0 380 270" className="w-full" aria-hidden="true">
+    <svg viewBox="0 0 310 215" className="w-full" aria-hidden="true">
       {gridPolygons.map((pts, i) => (
         <polygon key={i} points={pts} fill={i === levels - 1 ? '#f8fafc' : 'none'} stroke="#e2e8f0" strokeWidth={i === levels - 1 ? 1 : 0.6} />
       ))}
@@ -2717,7 +2717,7 @@ function AIRadarChart({ faehigkeiten, zugang, motivation }: { faehigkeiten: numb
         const [px, py] = pt(a, values[i])
         return <circle key={i} cx={px} cy={py} r={5} fill="#4f46e5" />
       })}
-      {/* value labels: nudged toward center so they never touch axis labels */}
+      {/* value labels toward center to avoid overlap with axis labels */}
       {angles.map((a, i) => {
         const [px, py] = pt(a, values[i])
         const dx = i === 0 ? 0 : i === 1 ? -14 : 14
