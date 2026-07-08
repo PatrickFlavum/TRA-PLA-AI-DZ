@@ -1315,7 +1315,7 @@ export default function PlanPage() {
               const COLOR_LABEL: Record<StandortbestimmungColor, string> = {
                 gruen: 'Bereit / Auf Kurs',
                 gelb:  'Zusätzliche Massnahmen notwendig',
-                rot:   'Show-Stopper / schwerwiegende Hindernisse',
+                rot:   'Schwerwiegende Herausforderung',
               }
               const COLOR_BG: Record<StandortbestimmungColor, string> = {
                 gruen: 'bg-green-500', gelb: 'bg-yellow-400', rot: 'bg-red-500',
@@ -1665,7 +1665,8 @@ export default function PlanPage() {
                       </button>
                     )}
                   </div>
-                  <p className="text-[10px] text-gray-400 mb-3">Prio = Nutzen × Skalierbarkeit × Akzeptanz (je 1–5)</p>
+                  <p className="text-[10px] text-gray-400 mb-1">Prio = Nutzen × Skalierbarkeit × Akzeptanz (je 1–5)</p>
+                  <p className="text-[10px] text-gray-400 mb-3">«Max. betroffene Teams bzw. MA» sind indikative Werte berechnet aus den Angaben aus Diagnose Teil 1</p>
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
                       <thead>
@@ -1676,9 +1677,9 @@ export default function PlanPage() {
                           <th className="pb-2 font-medium pr-3">Verfügbar ab</th>
                           <th className="pb-2 font-medium text-center pr-2">Max. betroffene Teams</th>
                           <th className="pb-2 font-medium text-center pr-2">Max. betroffene MA</th>
-                          <th className="pb-2 font-medium text-center pr-1 bg-sky-50 text-sky-600 rounded-tl">Bewertung Nutzen</th>
-                          <th className="pb-2 font-medium text-center pr-1 bg-sky-50 text-sky-600">Bewertung Skalierb.</th>
-                          <th className="pb-2 font-medium text-center pr-2 bg-sky-50 text-sky-600">Bewertung Akzept.</th>
+                          <th className="pb-2 font-medium text-center pr-1 bg-brand-50 text-brand-700 rounded-tl">Nutzen</th>
+                          <th className="pb-2 font-medium text-center pr-1 bg-brand-50 text-brand-700">Skalierb.</th>
+                          <th className="pb-2 font-medium text-center pr-2 bg-brand-50 text-brand-700">Akzept.</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1697,29 +1698,27 @@ export default function PlanPage() {
                                     <span className="ml-1.5 text-[9px] px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded-full font-medium">lokal</span>
                                   )}
                                 </td>
-                                <td className="py-1.5 pr-3">
-                                  {row.uc.status
-                                    ? <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-gray-100 text-gray-600">{UC_STATUS_SHORT[row.uc.status] ?? row.uc.status}</span>
-                                    : <span className="text-gray-400">–</span>}
+                                <td className="py-1.5 pr-3 text-gray-600">
+                                  {row.uc.status ? (UC_STATUS_SHORT[row.uc.status] ?? row.uc.status) : <span className="text-gray-400">–</span>}
                                 </td>
                                 <td className="py-1.5 pr-3 tabular-nums text-gray-600">{row.uc.available_from ? fmtDate(row.uc.available_from) : '–'}</td>
                                 <td className="py-1.5 pr-2 text-center tabular-nums text-gray-800">{row.anzahlTeams}</td>
                                 <td className="py-1.5 pr-2 text-center tabular-nums text-gray-600">{row.anzahlHC > 0 ? row.anzahlHC : '–'}</td>
-                                <td className="py-1 pr-1 bg-sky-50">
+                                <td className="py-1 pr-1 bg-brand-50">
                                   <select aria-label="Nutzen" value={e.nutzen} onChange={ev => setField('nutzen', Number(ev.target.value))}
-                                    className="w-14 px-1 py-0.5 border border-sky-200 rounded text-xs bg-white text-center focus:outline-none focus:ring-1 focus:ring-sky-400">
+                                    className="w-14 px-1 py-0.5 border border-brand-200 rounded text-xs bg-white text-center focus:outline-none focus:ring-1 focus:ring-brand-400">
                                     {[1,2,3,4,5].map(v => <option key={v} value={v}>{v}</option>)}
                                   </select>
                                 </td>
-                                <td className="py-1 pr-1 bg-sky-50">
+                                <td className="py-1 pr-1 bg-brand-50">
                                   <select aria-label="Skalierbarkeit" value={e.skalierbarkeit} onChange={ev => setField('skalierbarkeit', Number(ev.target.value))}
-                                    className="w-14 px-1 py-0.5 border border-sky-200 rounded text-xs bg-white text-center focus:outline-none focus:ring-1 focus:ring-sky-400">
+                                    className="w-14 px-1 py-0.5 border border-brand-200 rounded text-xs bg-white text-center focus:outline-none focus:ring-1 focus:ring-brand-400">
                                     {[1,2,3,4,5].map(v => <option key={v} value={v}>{v}</option>)}
                                   </select>
                                 </td>
-                                <td className="py-1 pr-2 bg-sky-50">
+                                <td className="py-1 pr-2 bg-brand-50">
                                   <select aria-label="Akzeptanz" value={e.akzeptanz} onChange={ev => setField('akzeptanz', Number(ev.target.value))}
-                                    className="w-14 px-1 py-0.5 border border-sky-200 rounded text-xs bg-white text-center focus:outline-none focus:ring-1 focus:ring-sky-400">
+                                    className="w-14 px-1 py-0.5 border border-brand-200 rounded text-xs bg-white text-center focus:outline-none focus:ring-1 focus:ring-brand-400">
                                     {[1,2,3,4,5].map(v => <option key={v} value={v}>{v}</option>)}
                                   </select>
                                 </td>
@@ -1758,9 +1757,9 @@ export default function PlanPage() {
                               <td className="py-2 pr-3 tabular-nums text-gray-600">{row.uc.available_from ? fmtDate(row.uc.available_from) : '–'}</td>
                               <td className="py-2 pr-2 text-center tabular-nums text-gray-800">{row.anzahlTeams}</td>
                               <td className="py-2 pr-2 text-center tabular-nums text-gray-600">{row.anzahlHC > 0 ? row.anzahlHC : '–'}</td>
-                              <td className={`py-2 pr-1 text-center tabular-nums font-medium bg-sky-50 ${row.hasRating ? 'text-sky-700' : 'text-gray-300'}`}>{row.nutzen}</td>
-                              <td className={`py-2 pr-1 text-center tabular-nums font-medium bg-sky-50 ${row.hasRating ? 'text-sky-700' : 'text-gray-300'}`}>{row.skalierbarkeit}</td>
-                              <td className={`py-2 pr-2 text-center tabular-nums font-medium bg-sky-50 ${row.hasRating ? 'text-sky-700' : 'text-gray-300'}`}>{row.akzeptanz}</td>
+                              <td className={`py-2 pr-1 text-center tabular-nums font-medium bg-brand-50 ${row.hasRating ? 'text-brand-700' : 'text-gray-300'}`}>{row.nutzen}</td>
+                              <td className={`py-2 pr-1 text-center tabular-nums font-medium bg-brand-50 ${row.hasRating ? 'text-brand-700' : 'text-gray-300'}`}>{row.skalierbarkeit}</td>
+                              <td className={`py-2 pr-2 text-center tabular-nums font-medium bg-brand-50 ${row.hasRating ? 'text-brand-700' : 'text-gray-300'}`}>{row.akzeptanz}</td>
                             </tr>
                           )
                         })}
@@ -1795,7 +1794,7 @@ export default function PlanPage() {
             {/* ── Generelle Potenzialfelder ── */}
             <div className="bg-white rounded-xl border border-gray-200 p-5">
               <div className="flex items-center justify-between mb-4 no-print">
-                <h5 className="text-sm font-semibold text-gray-700">Generelle Einschätzungen</h5>
+                <h5 className="text-sm font-semibold text-gray-700">Generelle Einschätzungen gesamter ART</h5>
                 {editable && !editingArtPotentials && (
                   <button type="button"
                     onClick={() => {
@@ -1811,9 +1810,9 @@ export default function PlanPage() {
               </div>
               <div className="space-y-5">
                 {([
-                  { label: 'Generelles Nutzenpotenzial', hint: 'Wie wird gesamtheitlich der pot. Nutzen von AI in diesem ART bewertet?', val: editingArtPotentials ? editBenefitPotential : art?.general_benefit_potential, set: setEditBenefitPotential },
-                  { label: 'Generelles Skalierungspotenzial', hint: 'Wie wird gesamtheitlich der pot. Skalierung – also Wiederverwendung von AI Use Cases – in diesem ART bewertet?', val: editingArtPotentials ? editScalingPotential : art?.general_scaling_potential, set: setEditScalingPotential },
-                  { label: 'Generelle Akzeptanz', hint: 'Wie wird generelle Akzeptanz von AI im ART bewertet?', val: editingArtPotentials ? editGeneralAcceptance : art?.general_acceptance, set: setEditGeneralAcceptance },
+                  { label: 'Nutzenpotenzial', hint: 'Wie wird gesamtheitlich der pot. Nutzen von AI in diesem ART bewertet?', val: editingArtPotentials ? editBenefitPotential : art?.general_benefit_potential, set: setEditBenefitPotential },
+                  { label: 'Skalierungspotenzial', hint: 'Wie wird gesamtheitlich der pot. Skalierung – also Wiederverwendung von AI Use Cases – in diesem ART bewertet?', val: editingArtPotentials ? editScalingPotential : art?.general_scaling_potential, set: setEditScalingPotential },
+                  { label: 'Akzeptanz', hint: 'Wie wird generelle Akzeptanz von AI im ART bewertet?', val: editingArtPotentials ? editGeneralAcceptance : art?.general_acceptance, set: setEditGeneralAcceptance },
                 ] as { label: string; hint: string; val: string | null | undefined; set: (v: string) => void }[]).map(field => (
                   <div key={field.label}>
                     <p className="text-xs font-semibold text-gray-700 mb-1">{field.label}</p>
@@ -1882,7 +1881,13 @@ export default function PlanPage() {
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <h4 className="text-base font-semibold text-gray-900">Use Case {uc.title}</h4>
+                            <button type="button" onClick={e => { e.stopPropagation(); setDetailUseCaseId(ucId) }}
+                              className="text-base font-semibold text-gray-900 hover:text-brand-600 text-left">
+                              Use Case {uc.title}
+                            </button>
+                            {uc.type === 'local' && (
+                              <span className="text-[9px] px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded-full font-medium whitespace-nowrap">lokal</span>
+                            )}
                             {useCaseTeamTypeLinks.filter(l => l.use_case_id === ucId).map(l => {
                               const tt = teamTypes.find(t => t.id === l.team_type_id)
                               if (!tt) return null
