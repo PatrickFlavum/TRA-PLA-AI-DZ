@@ -1926,19 +1926,21 @@ export default function PlanPage() {
                   </div>
                 )
                 return (
-                  <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 no-print">
-                    {withPotential.length > 0 && (
-                      <>
-                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Nicht zugeordnete Use Cases mit Potenzial</p>
-                        <div className="divide-y divide-gray-200 mb-3">{withPotential.map(renderRow)}</div>
-                      </>
-                    )}
-                    {rest.length > 0 && (
-                      <>
-                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Restliche nicht zugeordnete Use Cases</p>
-                        <div className="divide-y divide-gray-200">{rest.map(renderRow)}</div>
-                      </>
-                    )}
+                  <div className="bg-white rounded-xl border border-gray-200 p-5 no-print">
+                    <div className="grid grid-cols-2 gap-6 divide-x divide-gray-100">
+                      <div>
+                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Nicht zugeordnete Use Cases mit Potenzial</h4>
+                        {withPotential.length > 0
+                          ? <div className="divide-y divide-gray-100">{withPotential.map(renderRow)}</div>
+                          : <p className="text-xs text-gray-400 italic">Keine passenden Use Cases.</p>}
+                      </div>
+                      <div className="pl-6">
+                        <h4 className="text-sm font-semibold text-gray-700 mb-3">Restliche nicht zugeordnete Use Cases</h4>
+                        {rest.length > 0
+                          ? <div className="divide-y divide-gray-100">{rest.map(renderRow)}</div>
+                          : <p className="text-xs text-gray-400 italic">Keine weiteren Use Cases.</p>}
+                      </div>
+                    </div>
                   </div>
                 )
               })()}
