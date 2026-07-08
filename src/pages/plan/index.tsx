@@ -46,6 +46,29 @@ export const getStaticProps: GetStaticProps = async () => ({ props: {} })
 
 type TeamData = { team: Team; members: TeamMember[]; allocations: Record<string, number> }
 
+type PlanSnapshot = {
+  art?: Partial<Omit<ART, 'id' | 'edit_token' | 'readonly_token' | 'org_id' | 'created_at'>>
+  teams?: {
+    id: string; name: string; description?: string | null; challenges?: string | null
+    ai_faehigkeiten?: number | null; ai_zugang?: number | null; ai_motivation?: number | null
+    ai_selbsteinschaetzung_kommentar?: string | null
+    typeIds?: string[]
+    members?: { id?: string; role_id?: string; role?: string; type: 'intern' | 'extern'; category: 'business' | 'it'; fte: number; headcount: number }[]
+    allocations?: Record<string, number> | { capability?: string; percentage: number }[]
+  }[]
+  artUseCases?: { id: string; use_case_id: string; team_id: string; status: ARTUseCaseStatus }[]
+  useCases?: Pick<AIUseCase, 'id' | 'title' | 'description' | 'link' | 'status' | 'available_from' | 'type' | 'art_id' | 'sort_order'>[]
+  useCaseCapLinks?: Pick<AIUseCaseCapability, 'use_case_id' | 'capability_id' | 'efficiency_potential'>[]
+  useCaseMaturityLinks?: Pick<AIUseCaseMaturityLevel, 'use_case_id' | 'maturity_level_id'>[]
+  useCaseTeamTypeLinks?: Pick<AIUseCaseTeamType, 'use_case_id' | 'team_type_id'>[]
+  artUseCaseDates?: Pick<ARTUseCaseDateRow, 'use_case_id' | 'team_id' | 'capability_id' | 'pilot_from' | 'rollout_from' | 'full_usage_from'>[]
+  artUseCaseRatings?: Pick<ARTUseCaseRating, 'use_case_id' | 'nutzen' | 'skalierbarkeit' | 'akzeptanz'>[]
+  teamTeamTypes?: Pick<TeamTeamType, 'team_id' | 'team_type_id'>[]
+  timelineEntries?: Pick<ARTTimelineEntry, 'id' | 'title' | 'date_from' | 'date_until'>[]
+  checklistCompletions?: { checklist_item_id: string; completed_at: string }[]
+  standortbestimmung?: { dimension_key: string; color: string | null; reason: string | null }[]
+}
+
 type LocalCapEntry = { capability_id: string; efficiency_potential: string }
 function parseLocalCaps(entries: LocalCapEntry[]) {
   return entries.map(e => ({
@@ -167,8 +190,10 @@ function quarterLabel(key: string): string {
 export default function PlanPage() {
   const router = useRouter()
   const token = router.query.token as string
+  const versionParam = router.query.v as string | undefined
 
   const [canEdit, setCanEdit] = useState(false)
+  const [viewingVersion, setViewingVersion] = useState<PlanVersion | null>(null)
   const [art, setArt] = useState<ART | null>(null)
   const [org, setOrg] = useState<Organization | null>(null)
   const [versions, setVersions] = useState<PlanVersion[]>([])
@@ -266,7 +291,7 @@ export default function PlanPage() {
   const [tlUntil, setTlUntil] = useState('')
 
   const isDraft = latestVersion?.status === 'draft'
-  const editable = canEdit && isDraft
+  const editable = canEdit && isDraft && !viewingVersion
 
   // Compute which maturity level is currently reached based on rollout_from dates ≤ today
   const todayStr = new Date().toISOString().split('T')[0]
@@ -279,6 +304,19 @@ export default function PlanPage() {
   // maturityLevels is sorted ascending by code – highest reached = last match
   const computedMaturityLevel = [...maturityLevels].filter(m => reachedMaturityIds.has(m.id)).pop() ?? maturityLevels[0] ?? null
 
+  const applyArtToState = (a: ART) => {
+    setArt(a); setArtName(a.name)
+    setMissionStatement(a.mission_statement ?? ''); setBusinessContext(a.business_context ?? '')
+    setRisks(a.risks ?? ''); setGuidanceModeId(a.guidance_mode_id ?? null)
+    setGuidanceModeReason(a.guidance_mode_reason ?? ''); setArtLeadership(a.art_leadership ?? '')
+    setResponsiblePerson(a.responsible_person ?? '')
+    setCyberCriticality((a.cyber_criticality as CyberCriticality | '') ?? '')
+    setCyberCriticalityReason(a.cyber_criticality_reason ?? '')
+    setCurrentMaturityLevelId(a.current_maturity_level_id ?? null)
+    setEditPlannedApproach(a.planned_approach ?? '')
+    setBudget2027(a.budget_2027 != null ? String(a.budget_2027) : '')
+  }
+
   const loadData = useCallback(async () => {
     if (!token) return
     try {
@@ -286,66 +324,86 @@ export default function PlanPage() {
       let isEdit = true
       if (!a) { a = await loadARTByToken(token, 'readonly_token'); isEdit = false }
       if (!a) { setError('Transformationsplan nicht gefunden.'); setLoading(false); return }
+      setCanEdit(isEdit)
 
-      setCanEdit(isEdit); setArt(a)
-      setArtName(a.name)
-      setMissionStatement(a.mission_statement ?? '')
-      setBusinessContext(a.business_context ?? '')
-      setRisks(a.risks ?? '')
-      setGuidanceModeId(a.guidance_mode_id)
-      setGuidanceModeReason(a.guidance_mode_reason ?? '')
-      setArtLeadership(a.art_leadership ?? '')
-      setResponsiblePerson(a.responsible_person ?? '')
-      setCyberCriticality((a.cyber_criticality as CyberCriticality | '') ?? '')
-      setCyberCriticalityReason(a.cyber_criticality_reason ?? '')
-      setCurrentMaturityLevelId(a.current_maturity_level_id ?? null)
-      setEditPlannedApproach(a.planned_approach ?? '')
-      setBudget2027(a.budget_2027 != null ? String(a.budget_2027) : '')
-
-      const [o, v, teams, r, c, gm, uc, ucLinks, ucMatLinks, ml, auc, aucDates, ratings, divs] = await Promise.all([
-        loadOrganization(a.org_id), loadPlanVersions(a.id), loadTeams(a.id),
-        loadEmployeeRoles(), loadCapabilities(), loadGuidanceModes(),
-        loadAIUseCasesForPlan(a.id), loadAllUseCaseCapabilityLinks(), loadAllUseCaseMaturityLinks(),
-        loadMaturityLevels(), loadARTUseCases(a.id), loadARTUseCaseDates(a.id),
-        loadARTUseCaseRatings(a.id), loadBusinessDivisions(),
+      // Phase 1: reference data always loaded from DB
+      const [o, v, r, c, gm, ml, divs, qcItems, sbDims, tt] = await Promise.all([
+        loadOrganization(a.org_id), loadPlanVersions(a.id),
+        loadEmployeeRoles(), loadCapabilities(), loadGuidanceModes(), loadMaturityLevels(),
+        loadBusinessDivisions(),
+        loadQualityChecklistItems().catch(() => [] as QualityChecklistItem[]),
+        loadStandortbestimmungDimensionen().catch(() => [] as StandortbestimmungDimension[]),
+        loadTeamTypes().catch(() => [] as TeamType[]),
       ])
       setOrg(o); setVersions(v); setLatestVersion(v[0] ?? null)
-      setRoles(r); setCapabilities(c); setGuidanceModes(gm)
-      setUseCases(uc); setUseCaseCapLinks(ucLinks)
-      setUseCaseMaturityLinks(ucMatLinks); setMaturityLevels(ml)
-      setArtUseCases(auc); setArtUseCaseDates(aucDates)
-      setArtUseCaseRatings(ratings); setBusinessDivisions(divs)
+      setRoles(r); setCapabilities(c); setGuidanceModes(gm); setMaturityLevels(ml)
+      setBusinessDivisions(divs); setChecklistItems(qcItems); setSbDimensions(sbDims); setTeamTypes(tt)
 
-      // Optionale Tabellen – laden fehlertolerant damit fehlende DB-Tabellen die Seite nicht blockieren
-      const [qcItems, qcCompletions, sb, sbDims, tlEntries, tt, ucTtLinks] = await Promise.all([
-        loadQualityChecklistItems().catch(() => []),
-        loadARTQualityChecklistCompletions(a.id).catch(() => []),
-        loadARTStandortbestimmung(a.id).catch(() => []),
-        loadStandortbestimmungDimensionen().catch(() => []),
-        loadARTTimelineEntries(a.id).catch(() => []),
-        loadTeamTypes().catch(() => []),
-        loadAllUseCaseTeamTypeLinks().catch(() => []),
-      ])
-      setChecklistItems(qcItems)
-      setChecklistCompletions(qcCompletions)
-      setStandortbestimmung(sb)
-      setSbDimensions(sbDims)
-      setTimelineEntries(tlEntries)
-      setTeamTypes(tt)
-      setUseCaseTeamTypeLinks(ucTtLinks)
+      if (versionParam) {
+        // Phase 2a: version mode – hydrate all plan data from snapshot
+        const vNum = parseInt(versionParam, 10)
+        const ver = v.find(x => x.version_number === vNum)
+        if (!ver?.snapshot) { setError(`Version ${vNum} nicht gefunden oder enthält keinen Snapshot.`); setLoading(false); return }
+        setViewingVersion(ver)
+        const snap = ver.snapshot as PlanSnapshot
 
-      const teamIds = teams.map(t => t.id)
-      const [allMembers, allAllocs, ttt] = await Promise.all([loadAllTeamMembers(teamIds), loadAllTeamAllocations(teamIds), loadTeamTeamTypesByTeamIds(teamIds).catch(() => [])])
-      setTeamTeamTypes(ttt)
-      setTeamsData(teams.map(t => ({
-        team: t,
-        members: allMembers.filter(m => m.team_id === t.id),
-        allocations: allAllocs.filter(al => al.team_id === t.id)
-          .reduce((acc, al) => ({ ...acc, [al.capability_id]: al.percentage }), {} as Record<string, number>),
-      })))
+        applyArtToState({ ...a, ...(snap.art ?? {}) })
+
+        setTeamsData((snap.teams ?? []).map(t => ({
+          team: { id: t.id, art_id: a.id, name: t.name, description: t.description ?? null, challenges: t.challenges ?? null, ai_faehigkeiten: t.ai_faehigkeiten ?? null, ai_zugang: t.ai_zugang ?? null, ai_motivation: t.ai_motivation ?? null, ai_selbsteinschaetzung_kommentar: t.ai_selbsteinschaetzung_kommentar ?? null, sort_order: 0, created_at: '' },
+          members: (t.members ?? []).map(m => ({ id: m.id ?? '', team_id: t.id, role_id: m.role_id ?? '', type: m.type, category: m.category, fte: m.fte, headcount: m.headcount, created_at: '' })),
+          allocations: Array.isArray(t.allocations) ? {} : (t.allocations ?? {}),
+        })))
+        setTeamTeamTypes((snap.teamTeamTypes ?? []).map(ttt => ({ id: '', team_id: ttt.team_id, team_type_id: ttt.team_type_id, created_at: '' })))
+        setArtUseCases((snap.artUseCases ?? []).map(u => ({ id: u.id, art_id: a.id, use_case_id: u.use_case_id, team_id: u.team_id, status: u.status, created_at: '' })))
+        setUseCases((snap.useCases ?? []).map(uc => ({ ...uc, created_at: '' })))
+        setUseCaseCapLinks((snap.useCaseCapLinks ?? []).map(l => ({ id: '', use_case_id: l.use_case_id, capability_id: l.capability_id, efficiency_potential: l.efficiency_potential ?? null })))
+        setUseCaseMaturityLinks((snap.useCaseMaturityLinks ?? []).map(l => ({ id: '', use_case_id: l.use_case_id, maturity_level_id: l.maturity_level_id })))
+        setUseCaseTeamTypeLinks((snap.useCaseTeamTypeLinks ?? []).map(l => ({ id: '', use_case_id: l.use_case_id, team_type_id: l.team_type_id })))
+        setArtUseCaseDates((snap.artUseCaseDates ?? []).map(d => ({ id: '', art_id: a.id, use_case_id: d.use_case_id, team_id: d.team_id, capability_id: d.capability_id, pilot_from: d.pilot_from ?? null, rollout_from: d.rollout_from ?? null, full_usage_from: d.full_usage_from ?? null, created_at: '' })))
+        setArtUseCaseRatings((snap.artUseCaseRatings ?? []).map(r => ({ id: '', art_id: a.id, use_case_id: r.use_case_id, nutzen: r.nutzen, skalierbarkeit: r.skalierbarkeit, akzeptanz: r.akzeptanz, created_at: '' })))
+        setTimelineEntries((snap.timelineEntries ?? []).map(e => ({ id: e.id, art_id: a.id, title: e.title, date_from: e.date_from, date_until: e.date_until, created_at: '' })))
+        setChecklistCompletions((snap.checklistCompletions ?? []).map(cc => ({ id: '', art_id: a.id, checklist_item_id: cc.checklist_item_id, completed_at: cc.completed_at ?? new Date().toISOString(), created_at: '' })))
+        setStandortbestimmung((snap.standortbestimmung ?? []).map(s => ({ id: '', art_id: a.id, dimension_key: s.dimension_key, color: (s.color as StandortbestimmungColor | null) ?? null, reason: s.reason ?? null, created_at: '' })))
+
+      } else {
+        // Phase 2b: live mode – load all plan data from DB
+        setViewingVersion(null)
+        applyArtToState(a)
+
+        const [uc, ucLinks, ucMatLinks, auc, aucDates, ratings, teams] = await Promise.all([
+          loadAIUseCasesForPlan(a.id), loadAllUseCaseCapabilityLinks(), loadAllUseCaseMaturityLinks(),
+          loadARTUseCases(a.id), loadARTUseCaseDates(a.id), loadARTUseCaseRatings(a.id),
+          loadTeams(a.id),
+        ])
+        setUseCases(uc); setUseCaseCapLinks(ucLinks); setUseCaseMaturityLinks(ucMatLinks)
+        setArtUseCases(auc); setArtUseCaseDates(aucDates); setArtUseCaseRatings(ratings)
+
+        const [qcCompletions, sb, tlEntries, ucTtLinks] = await Promise.all([
+          loadARTQualityChecklistCompletions(a.id).catch(() => [] as ARTQualityChecklistCompletion[]),
+          loadARTStandortbestimmung(a.id).catch(() => [] as ARTStandortbestimmung[]),
+          loadARTTimelineEntries(a.id).catch(() => [] as ARTTimelineEntry[]),
+          loadAllUseCaseTeamTypeLinks().catch(() => [] as AIUseCaseTeamType[]),
+        ])
+        setChecklistCompletions(qcCompletions); setStandortbestimmung(sb)
+        setTimelineEntries(tlEntries); setUseCaseTeamTypeLinks(ucTtLinks)
+
+        const teamIds = teams.map(t => t.id)
+        const [allMembers, allAllocs, ttt] = await Promise.all([
+          loadAllTeamMembers(teamIds), loadAllTeamAllocations(teamIds),
+          loadTeamTeamTypesByTeamIds(teamIds).catch(() => [] as TeamTeamType[]),
+        ])
+        setTeamTeamTypes(ttt)
+        setTeamsData(teams.map(t => ({
+          team: t,
+          members: allMembers.filter(m => m.team_id === t.id),
+          allocations: allAllocs.filter(al => al.team_id === t.id)
+            .reduce((acc, al) => ({ ...acc, [al.capability_id]: al.percentage }), {} as Record<string, number>),
+        })))
+      }
     } catch { setError('Fehler beim Laden.') }
     finally { setLoading(false) }
-  }, [token])
+  }, [token, versionParam]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -509,16 +567,40 @@ export default function PlanPage() {
   }
 
   const handleCheckIn = async () => {
-    if (!latestVersion || !changeDesc.trim()) return
+    if (!latestVersion || !art || !changeDesc.trim()) return
     setSaving(true)
     try {
-      const snapshot = {
-        art: { name: art?.name, description: art?.description, mission_statement: missionStatement, business_context: businessContext, risks, budget_2027: art?.budget_2027 },
+      const snapshot: PlanSnapshot = {
+        art: {
+          name: art.name, description: art.description, mission_statement: art.mission_statement,
+          business_context: art.business_context, risks: art.risks, budget_2027: art.budget_2027,
+          guidance_mode_id: art.guidance_mode_id, art_leadership: art.art_leadership,
+          responsible_person: art.responsible_person, cyber_criticality: art.cyber_criticality,
+          cyber_criticality_reason: art.cyber_criticality_reason, guidance_mode_reason: art.guidance_mode_reason,
+          current_maturity_level_id: art.current_maturity_level_id, planned_approach: art.planned_approach,
+          general_benefit_potential: art.general_benefit_potential, general_scaling_potential: art.general_scaling_potential,
+          general_acceptance: art.general_acceptance, art_confidence: art.art_confidence,
+          art_confidence_reason: art.art_confidence_reason, art_economy_preview: art.art_economy_preview,
+        },
         teams: teamsData.map(td => ({
-          name: td.team.name, description: td.team.description,
-          members: td.members.map(m => ({ role: roles.find(r => r.id === m.role_id)?.name, type: m.type, category: m.category, fte: m.fte, headcount: m.headcount })),
-          allocations: Object.entries(td.allocations).map(([capId, pct]) => ({ capability: capabilities.find(c => c.id === capId)?.name, percentage: pct })),
+          id: td.team.id, name: td.team.name, description: td.team.description, challenges: td.team.challenges,
+          ai_faehigkeiten: td.team.ai_faehigkeiten, ai_zugang: td.team.ai_zugang, ai_motivation: td.team.ai_motivation,
+          ai_selbsteinschaetzung_kommentar: td.team.ai_selbsteinschaetzung_kommentar,
+          typeIds: teamTeamTypes.filter(ttt => ttt.team_id === td.team.id).map(ttt => ttt.team_type_id),
+          members: td.members.map(m => ({ id: m.id, role_id: m.role_id, type: m.type, category: m.category, fte: m.fte, headcount: m.headcount })),
+          allocations: td.allocations,
         })),
+        artUseCases: artUseCases.map(u => ({ id: u.id, use_case_id: u.use_case_id, team_id: u.team_id, status: u.status })),
+        useCases: useCases.map(uc => ({ id: uc.id, title: uc.title, description: uc.description, link: uc.link, status: uc.status, available_from: uc.available_from, type: uc.type, art_id: uc.art_id, sort_order: uc.sort_order })),
+        useCaseCapLinks: useCaseCapLinks.map(l => ({ use_case_id: l.use_case_id, capability_id: l.capability_id, efficiency_potential: l.efficiency_potential })),
+        useCaseMaturityLinks: useCaseMaturityLinks.map(l => ({ use_case_id: l.use_case_id, maturity_level_id: l.maturity_level_id })),
+        useCaseTeamTypeLinks: useCaseTeamTypeLinks.map(l => ({ use_case_id: l.use_case_id, team_type_id: l.team_type_id })),
+        artUseCaseDates: artUseCaseDates.map(d => ({ use_case_id: d.use_case_id, team_id: d.team_id, capability_id: d.capability_id, pilot_from: d.pilot_from, rollout_from: d.rollout_from, full_usage_from: d.full_usage_from })),
+        artUseCaseRatings: artUseCaseRatings.map(r => ({ use_case_id: r.use_case_id, nutzen: r.nutzen, skalierbarkeit: r.skalierbarkeit, akzeptanz: r.akzeptanz })),
+        teamTeamTypes: teamTeamTypes.map(ttt => ({ team_id: ttt.team_id, team_type_id: ttt.team_type_id })),
+        timelineEntries: timelineEntries.map(e => ({ id: e.id, title: e.title, date_from: e.date_from, date_until: e.date_until })),
+        checklistCompletions: checklistCompletions.map(c => ({ checklist_item_id: c.checklist_item_id, completed_at: c.completed_at })),
+        standortbestimmung: standortbestimmung.map(s => ({ dimension_key: s.dimension_key, color: s.color, reason: s.reason })),
       }
       await checkInVersion(latestVersion.id, changeDesc.trim(), snapshot)
       setShowCheckIn(false); setChangeDesc(''); setEditingIntro(false); setEditingTeamId(null); setEditingFinanzen(false)
@@ -1146,10 +1228,32 @@ export default function PlanPage() {
           </div>
         )}
 
+        {/* ══════ VERSION BANNER ══════════════════════════════════════ */}
+        {viewingVersion && (
+          <div className="bg-amber-50 border-b border-amber-200 no-print">
+            <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 shrink-0">
+                  Version {viewingVersion.version_number}
+                </span>
+                <span className="text-xs text-amber-700 truncate">
+                  {new Date(viewingVersion.checked_in_at ?? viewingVersion.created_at).toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  {viewingVersion.change_description ? ` · ${viewingVersion.change_description}` : ''}
+                </span>
+                <span className="text-xs text-amber-600 italic shrink-0">Nur-Ansicht</span>
+              </div>
+              <a href={`/plan/?token=${token}`}
+                className="text-xs text-brand-600 hover:text-brand-800 font-medium whitespace-nowrap shrink-0">
+                ← Zur aktuellen Version
+              </a>
+            </div>
+          </div>
+        )}
+
         <div className="max-w-5xl mx-auto px-4 py-6">
 
           {/* ══════ HEADER ══════════════════════════════════════════════ */}
-          <CollapsibleSection title="Der ART im Überblick" subtitle="Grundlegenden Zahlen, Daten und Fakten zum ART" defaultOpen={true} printTitle={`AI@DZ – Transformationsplan${latestVersion ? ` (Version ${latestVersion.version_number}${isDraft ? ' Draft' : ''})` : ''}`} printSubtitle="Deckblatt" isFirstSection accent="dark-blue">
+          <CollapsibleSection title="Der ART im Überblick" subtitle="Grundlegenden Zahlen, Daten und Fakten zum ART" defaultOpen={true} printTitle={`AI@DZ – Transformationsplan${(viewingVersion ?? latestVersion) ? ` (Version ${(viewingVersion ?? latestVersion)!.version_number}${!viewingVersion && isDraft ? ' Draft' : ''})` : ''}`} printSubtitle="Deckblatt" isFirstSection accent="dark-blue">
 
             {/* ── Zeile 1: Titelbox + ART-Leitung ── */}
             {!editingIntro && <div className="grid grid-cols-2 gap-4 mb-4">
@@ -2688,7 +2792,7 @@ export default function PlanPage() {
                       <tr key={v.id} className="border-b border-gray-50">
                         <td className="py-2 font-medium">
                           {v.snapshot ? (
-                            <a href={`/plan/version?token=${token}&v=${v.version_number}`} target="_blank" rel="noopener noreferrer"
+                            <a href={`/plan/?token=${token}&v=${v.version_number}`} target="_blank" rel="noopener noreferrer"
                               className="text-brand-600 hover:text-brand-700 hover:underline">
                               v{v.version_number}
                             </a>
