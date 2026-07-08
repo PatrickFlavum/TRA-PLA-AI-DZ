@@ -393,7 +393,7 @@ export async function createTeam(
 
 export async function updateTeam(
   id: string,
-  params: Partial<Pick<Team, 'name' | 'description' | 'challenges'>>
+  params: Partial<Pick<Team, 'name' | 'description' | 'challenges' | 'ai_faehigkeiten' | 'ai_zugang' | 'ai_motivation' | 'ai_selbsteinschaetzung_kommentar'>>
 ): Promise<void> {
   const { error } = await supabase
     .from('teams')

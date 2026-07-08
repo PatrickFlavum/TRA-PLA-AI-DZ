@@ -83,6 +83,10 @@ export type Team = {
   name: string
   description: string | null
   challenges: string | null
+  ai_faehigkeiten: number | null
+  ai_zugang: number | null
+  ai_motivation: number | null
+  ai_selbsteinschaetzung_kommentar: string | null
   sort_order: number
   created_at: string
 }

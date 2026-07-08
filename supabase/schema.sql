@@ -256,12 +256,17 @@ create index if not exists idx_plan_versions_art on plan_versions(art_id);
 -- ─── Teams ────────────────────────────────────────────────────────────────
 
 create table if not exists teams (
-  id          uuid        primary key default uuid_generate_v4(),
-  art_id      uuid        not null references arts(id) on delete cascade,
-  name        text        not null,
-  description text,
-  sort_order  integer     not null default 0,
-  created_at  timestamptz not null default now()
+  id                               uuid        primary key default uuid_generate_v4(),
+  art_id                           uuid        not null references arts(id) on delete cascade,
+  name                             text        not null,
+  description                      text,
+  challenges                       text,
+  ai_faehigkeiten                  integer     check (ai_faehigkeiten between 1 and 5),
+  ai_zugang                        integer     check (ai_zugang between 1 and 5),
+  ai_motivation                    integer     check (ai_motivation between 1 and 5),
+  ai_selbsteinschaetzung_kommentar text,
+  sort_order                       integer     not null default 0,
+  created_at                       timestamptz not null default now()
 );
 
 create index if not exists idx_teams_art on teams(art_id);
@@ -465,7 +470,11 @@ create table if not exists team_team_types (
 
 create index if not exists idx_team_team_types_team on team_team_types(team_id);
 
-alter table teams add column if not exists challenges text;
+alter table teams add column if not exists challenges                       text;
+alter table teams add column if not exists ai_faehigkeiten                  integer check (ai_faehigkeiten between 1 and 5);
+alter table teams add column if not exists ai_zugang                        integer check (ai_zugang between 1 and 5);
+alter table teams add column if not exists ai_motivation                    integer check (ai_motivation between 1 and 5);
+alter table teams add column if not exists ai_selbsteinschaetzung_kommentar text;
 
 -- ─── Row Level Security ───────────────────────────────────────────────────
 

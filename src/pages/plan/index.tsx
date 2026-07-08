@@ -497,10 +497,13 @@ export default function PlanPage() {
     } catch { setError('Fehler beim Erstellen des Teams.') }
   }
 
-  const handleSaveTeam = async (teamId: string, name: string, description: string | null, challenges: string | null, typeIds: string[]) => {
+  const handleSaveTeam = async (
+    teamId: string, name: string, description: string | null, challenges: string | null, typeIds: string[],
+    aiSelbst: { faehigkeiten: number | null; zugang: number | null; motivation: number | null; kommentar: string | null }
+  ) => {
     setSaving(true)
     try {
-      await updateTeam(teamId, { name, description, challenges })
+      await updateTeam(teamId, { name, description, challenges, ai_faehigkeiten: aiSelbst.faehigkeiten, ai_zugang: aiSelbst.zugang, ai_motivation: aiSelbst.motivation, ai_selbsteinschaetzung_kommentar: aiSelbst.kommentar })
       await saveTeamTeamTypes(teamId, typeIds)
       const td = teamsData.find(t => t.team.id === teamId)
       if (td) {
@@ -1514,6 +1517,30 @@ export default function PlanPage() {
                             <p className="text-sm text-gray-700 whitespace-pre-wrap">{td.team.challenges}</p>
                           </div>
                         )}
+                        {(td.team.ai_faehigkeiten != null || td.team.ai_zugang != null || td.team.ai_motivation != null) && (
+                          <div className="mt-6">
+                            <h5 className="text-sm font-semibold text-gray-700 mb-3">AI-Selbsteinschätzung</h5>
+                            {td.team.ai_faehigkeiten != null && td.team.ai_zugang != null && td.team.ai_motivation != null ? (
+                              <div className="flex flex-col sm:flex-row gap-4 items-start">
+                                <AIRadarChart faehigkeiten={td.team.ai_faehigkeiten} zugang={td.team.ai_zugang} motivation={td.team.ai_motivation} />
+                                <div className="text-xs text-gray-600 space-y-1.5 shrink-0">
+                                  <div><span className="font-medium text-gray-700">AI-Fähigkeiten</span> <span className="text-gray-400 ml-1">Stufe {td.team.ai_faehigkeiten}</span><br /><span className="text-gray-500">{AI_FAEHIGKEITEN_LABELS[td.team.ai_faehigkeiten]}</span></div>
+                                  <div><span className="font-medium text-gray-700">AI-Zugang</span> <span className="text-gray-400 ml-1">Stufe {td.team.ai_zugang}</span><br /><span className="text-gray-500">{AI_ZUGANG_LABELS[td.team.ai_zugang]}</span></div>
+                                  <div><span className="font-medium text-gray-700">AI-Motivation</span> <span className="text-gray-400 ml-1">Stufe {td.team.ai_motivation}</span><br /><span className="text-gray-500">{AI_MOTIVATION_LABELS[td.team.ai_motivation]}</span></div>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-sm space-y-1">
+                                {td.team.ai_faehigkeiten != null && <p><span className="font-medium text-gray-600">AI-Fähigkeiten:</span> Stufe {td.team.ai_faehigkeiten} – {AI_FAEHIGKEITEN_LABELS[td.team.ai_faehigkeiten]}</p>}
+                                {td.team.ai_zugang != null && <p><span className="font-medium text-gray-600">AI-Zugang:</span> Stufe {td.team.ai_zugang} – {AI_ZUGANG_LABELS[td.team.ai_zugang]}</p>}
+                                {td.team.ai_motivation != null && <p><span className="font-medium text-gray-600">AI-Motivation:</span> Stufe {td.team.ai_motivation} – {AI_MOTIVATION_LABELS[td.team.ai_motivation]}</p>}
+                              </div>
+                            )}
+                            {td.team.ai_selbsteinschaetzung_kommentar && (
+                              <p className="text-sm text-gray-600 mt-3 whitespace-pre-wrap">{td.team.ai_selbsteinschaetzung_kommentar}</p>
+                            )}
+                          </div>
+                        )}
                         {/* Geplante AI Use Cases – ausgeblendet, ggf. später wieder aktivieren
                         {(() => {
                           type UcRow = { ucTitle: string; capId: string; pilot_from: string | null; rollout_from: string | null; full_usage_from: string | null }
@@ -2504,7 +2531,7 @@ export default function PlanPage() {
 type TeamEditModeProps = {
   teamData: TeamData; roles: EmployeeRole[]; capabilities: BizDevOpsCapability[]; saving: boolean
   teamTypes: TeamType[]; initTypeIds: string[]
-  onSave: (teamId: string, name: string, desc: string | null, challenges: string | null, typeIds: string[]) => void
+  onSave: (teamId: string, name: string, desc: string | null, challenges: string | null, typeIds: string[], aiSelbst: { faehigkeiten: number | null; zugang: number | null; motivation: number | null; kommentar: string | null }) => void
   onDeleteTeam: (id: string, name: string) => void
   onAddMember: (m: Pick<TeamMember, 'role_id' | 'type' | 'category' | 'fte' | 'headcount'>) => void
   onDeleteMember: (id: string) => void; onAllocChange: (capId: string, val: number) => void; onClose: () => void
@@ -2516,12 +2543,18 @@ function TeamEditMode({ teamData, roles, capabilities, saving, teamTypes, initTy
   const [editDesc, setEditDesc] = useState(team.description ?? '')
   const [editChallenges, setEditChallenges] = useState(team.challenges ?? '')
   const [selectedTypeIds, setSelectedTypeIds] = useState<string[]>(initTypeIds)
+  const [editAiFaehigkeiten, setEditAiFaehigkeiten] = useState<number | ''>(team.ai_faehigkeiten ?? '')
+  const [editAiZugang, setEditAiZugang] = useState<number | ''>(team.ai_zugang ?? '')
+  const [editAiMotivation, setEditAiMotivation] = useState<number | ''>(team.ai_motivation ?? '')
+  const [editAiKommentar, setEditAiKommentar] = useState(team.ai_selbsteinschaetzung_kommentar ?? '')
   const totalAlloc = Object.values(allocations).reduce((s, v) => s + v, 0)
   const allocOk = totalAlloc === 100 || totalAlloc === 0
 
   const toggleType = (id: string) => setSelectedTypeIds(prev =>
     prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
   )
+
+  const selectCls = "w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500 bg-white"
 
   return (
     <div>
@@ -2563,12 +2596,129 @@ function TeamEditMode({ teamData, roles, capabilities, saving, teamTypes, initTy
         <textarea id={`tc-${team.id}`} value={editChallenges} onChange={e => setEditChallenges(e.target.value)} rows={3} placeholder="Optional"
           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500 resize-y" />
       </div>
+      <div className="mt-6 pt-5 border-t border-gray-100">
+        <h5 className="text-sm font-semibold text-gray-700 mb-3">AI-Selbsteinschätzung</h5>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">AI-Fähigkeiten</label>
+            <p className="text-[10px] text-gray-400 mb-1.5">Welche AI Fähigkeiten haben wir momentan in unserem Team?</p>
+            <select value={editAiFaehigkeiten} onChange={e => setEditAiFaehigkeiten(e.target.value === '' ? '' : Number(e.target.value))} className={selectCls}>
+              <option value="">(nicht gesetzt)</option>
+              <option value={1}>1 – Kaum Wissen</option>
+              <option value={2}>2 – Grundverständnis</option>
+              <option value={3}>3 – Erste Kompetenzen</option>
+              <option value={4}>4 – Gute Kompetenzen</option>
+              <option value={5}>5 – Hohe Kompetenzen</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">AI-Zugang</label>
+            <p className="text-[10px] text-gray-400 mb-1.5">Ermöglicht unser Umfeld die Nutzung von AI?</p>
+            <select value={editAiZugang} onChange={e => setEditAiZugang(e.target.value === '' ? '' : Number(e.target.value))} className={selectCls}>
+              <option value="">(nicht gesetzt)</option>
+              <option value={1}>1 – Keine Unterstützung</option>
+              <option value={2}>2 – Erste Zugänge</option>
+              <option value={3}>3 – Nutzung möglich</option>
+              <option value={4}>4 – Nutzung in Arbeitsprozess integriert</option>
+              <option value={5}>5 – Nutzung in Arbeitsprozess fest verankert</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">AI-Motivation</label>
+            <p className="text-[10px] text-gray-400 mb-1.5">Wollen wir als Team AI überhaupt nutzen?</p>
+            <select value={editAiMotivation} onChange={e => setEditAiMotivation(e.target.value === '' ? '' : Number(e.target.value))} className={selectCls}>
+              <option value="">(nicht gesetzt)</option>
+              <option value={1}>1 – Geringeres Interesse</option>
+              <option value={2}>2 – Offen, aber zurückhaltend</option>
+              <option value={3}>3 – Probiert aktiv aus</option>
+              <option value={4}>4 – Regelmässige Nutzung</option>
+              <option value={5}>5 – Treib AI-Innovation selbst voran</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label htmlFor={`ai-k-${team.id}`} className="block text-xs font-medium text-gray-600 mb-1">Kommentar zur Selbsteinschätzung</label>
+          <textarea id={`ai-k-${team.id}`} value={editAiKommentar} onChange={e => setEditAiKommentar(e.target.value)} rows={3} placeholder="Optional"
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500 resize-y" />
+        </div>
+      </div>
       <div className="flex gap-2 mt-6 pt-4 border-t border-gray-100">
-        <button type="button" onClick={() => onSave(team.id, editName.trim() || team.name, editDesc.trim() || null, editChallenges.trim() || null, selectedTypeIds)} disabled={saving || !allocOk}
+        <button type="button" onClick={() => onSave(team.id, editName.trim() || team.name, editDesc.trim() || null, editChallenges.trim() || null, selectedTypeIds, { faehigkeiten: editAiFaehigkeiten !== '' ? editAiFaehigkeiten : null, zugang: editAiZugang !== '' ? editAiZugang : null, motivation: editAiMotivation !== '' ? editAiMotivation : null, kommentar: editAiKommentar.trim() || null })} disabled={saving || !allocOk}
           className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg">{saving ? 'Speichern…' : 'Speichern'}</button>
         <button type="button" onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Abbrechen</button>
       </div>
     </div>
+  )
+}
+
+// ─── AI Selbsteinschätzung ───────────────────────────────────────────────────
+
+const AI_FAEHIGKEITEN_LABELS: Record<number, string> = {
+  1: 'Kaum Wissen', 2: 'Grundverständnis', 3: 'Erste Kompetenzen', 4: 'Gute Kompetenzen', 5: 'Hohe Kompetenzen',
+}
+const AI_ZUGANG_LABELS: Record<number, string> = {
+  1: 'Keine Unterstützung', 2: 'Erste Zugänge', 3: 'Nutzung möglich',
+  4: 'Nutzung in Arbeitsprozess integriert', 5: 'Nutzung in Arbeitsprozess fest verankert',
+}
+const AI_MOTIVATION_LABELS: Record<number, string> = {
+  1: 'Geringeres Interesse', 2: 'Offen, aber zurückhaltend', 3: 'Probiert aktiv aus',
+  4: 'Regelmässige Nutzung', 5: 'Treib AI-Innovation selbst voran',
+}
+
+function AIRadarChart({ faehigkeiten, zugang, motivation }: { faehigkeiten: number; zugang: number; motivation: number }) {
+  const cx = 140, cy = 100, maxR = 72, levels = 5
+  // angles: top (AI-Fähigkeiten), bottom-right (AI-Zugang), bottom-left (AI-Motivation)
+  const angles = [-Math.PI / 2, Math.PI / 6, (5 * Math.PI) / 6]
+  const values = [faehigkeiten, zugang, motivation]
+
+  const pt = (angle: number, level: number): [number, number] => {
+    const r = (level / levels) * maxR
+    return [cx + r * Math.cos(angle), cy + r * Math.sin(angle)]
+  }
+
+  const gridPolygons = Array.from({ length: levels }, (_, i) =>
+    angles.map(a => pt(a, i + 1).join(',')).join(' ')
+  )
+  const dataPolygon = angles.map((a, i) => pt(a, values[i]).join(',')).join(' ')
+  const axisEnds = angles.map(a => pt(a, levels))
+
+  const labelProps = [
+    { x: axisEnds[0][0], y: axisEnds[0][1] - 11, anchor: 'middle' as const, label: 'AI-Fähigkeiten' },
+    { x: axisEnds[1][0] + 8, y: axisEnds[1][1], anchor: 'start' as const, label: 'AI-Zugang' },
+    { x: axisEnds[2][0] - 8, y: axisEnds[2][1], anchor: 'end' as const, label: 'AI-Motivation' },
+  ]
+
+  return (
+    <svg viewBox="0 0 280 195" className="w-full max-w-[260px]" aria-hidden="true">
+      {gridPolygons.map((pts, i) => (
+        <polygon key={i} points={pts} fill={i === levels - 1 ? '#f8fafc' : 'none'} stroke="#e2e8f0" strokeWidth={i === levels - 1 ? 1 : 0.6} />
+      ))}
+      {angles.map((a, i) => {
+        const [ax, ay] = axisEnds[i]
+        return <line key={i} x1={cx} y1={cy} x2={ax} y2={ay} stroke="#cbd5e1" strokeWidth={0.75} />
+      })}
+      {/* level numbers along right axis */}
+      {Array.from({ length: levels }, (_, i) => {
+        const [lx, ly] = pt(angles[1], i + 1)
+        return <text key={i} x={lx + 3} y={ly} dominantBaseline="middle" fontSize={6} fill="#94a3b8">{i + 1}</text>
+      })}
+      <polygon points={dataPolygon} fill="rgba(79,70,229,0.13)" stroke="#4f46e5" strokeWidth={2} strokeLinejoin="round" />
+      {angles.map((a, i) => {
+        const [px, py] = pt(a, values[i])
+        return <circle key={i} cx={px} cy={py} r={4} fill="#4f46e5" />
+      })}
+      {/* value labels near data dots */}
+      {angles.map((a, i) => {
+        const [px, py] = pt(a, values[i])
+        const dx = i === 0 ? 0 : i === 1 ? 10 : -10
+        const dy = i === 0 ? -8 : 1
+        const anchor = i === 0 ? 'middle' : i === 1 ? 'start' : 'end'
+        return <text key={i} x={px + dx} y={py + dy} textAnchor={anchor} dominantBaseline="middle" fontSize={11} fill="#3730a3" fontWeight="700">{values[i]}</text>
+      })}
+      {labelProps.map((lp, i) => (
+        <text key={i} x={lp.x} y={lp.y} textAnchor={lp.anchor} dominantBaseline="auto" fontSize={8} fill="#475569">{lp.label}</text>
+      ))}
+    </svg>
   )
 }
 
