@@ -1521,12 +1521,14 @@ export default function PlanPage() {
                           <div className="mt-6">
                             <h5 className="text-sm font-semibold text-gray-700 mb-3">AI-Selbsteinschätzung</h5>
                             {td.team.ai_faehigkeiten != null && td.team.ai_zugang != null && td.team.ai_motivation != null ? (
-                              <div className="flex flex-col sm:flex-row gap-4 items-start">
-                                <AIRadarChart faehigkeiten={td.team.ai_faehigkeiten} zugang={td.team.ai_zugang} motivation={td.team.ai_motivation} />
-                                <div className="text-xs text-gray-600 space-y-1.5 shrink-0">
+                              <div className="flex flex-col sm:flex-row gap-6 items-start">
+                                <div className="text-xs text-gray-600 space-y-1.5 shrink-0 sm:w-44">
                                   <div><span className="font-medium text-gray-700">AI-Fähigkeiten</span> <span className="text-gray-400 ml-1">Stufe {td.team.ai_faehigkeiten}</span><br /><span className="text-gray-500">{AI_FAEHIGKEITEN_LABELS[td.team.ai_faehigkeiten]}</span></div>
                                   <div><span className="font-medium text-gray-700">AI-Zugang</span> <span className="text-gray-400 ml-1">Stufe {td.team.ai_zugang}</span><br /><span className="text-gray-500">{AI_ZUGANG_LABELS[td.team.ai_zugang]}</span></div>
                                   <div><span className="font-medium text-gray-700">AI-Motivation</span> <span className="text-gray-400 ml-1">Stufe {td.team.ai_motivation}</span><br /><span className="text-gray-500">{AI_MOTIVATION_LABELS[td.team.ai_motivation]}</span></div>
+                                </div>
+                                <div className="flex-1">
+                                  <AIRadarChart faehigkeiten={td.team.ai_faehigkeiten} zugang={td.team.ai_zugang} motivation={td.team.ai_motivation} />
                                 </div>
                               </div>
                             ) : (
@@ -2689,7 +2691,7 @@ function AIRadarChart({ faehigkeiten, zugang, motivation }: { faehigkeiten: numb
   ]
 
   return (
-    <svg viewBox="0 0 280 195" className="w-full max-w-[260px]" aria-hidden="true">
+    <svg viewBox="0 0 280 195" className="w-full" aria-hidden="true">
       {gridPolygons.map((pts, i) => (
         <polygon key={i} points={pts} fill={i === levels - 1 ? '#f8fafc' : 'none'} stroke="#e2e8f0" strokeWidth={i === levels - 1 ? 1 : 0.6} />
       ))}
