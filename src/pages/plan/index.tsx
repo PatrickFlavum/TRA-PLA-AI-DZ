@@ -202,8 +202,7 @@ export default function PlanPage() {
   const toggleUseCaseExpand = (id: string) => setExpandedUseCaseIds(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   const [editingFinanzen, setEditingFinanzen] = useState(false)
   const [editingUseCaseId, setEditingUseCaseId] = useState<string | null>(null)
-  const [showAddUseCase, setShowAddUseCase] = useState(false)
-  const [selectedUseCaseToAdd, setSelectedUseCaseToAdd] = useState('')
+  const [pendingOpenUcId, setPendingOpenUcId] = useState<string | null>(null)
   const [missionStatement, setMissionStatement] = useState('')
   const [businessContext, setBusinessContext] = useState('')
   const [risks, setRisks] = useState('')
@@ -343,6 +342,18 @@ export default function PlanPage() {
   }, [token])
 
   useEffect(() => { loadData() }, [loadData])
+
+  useEffect(() => {
+    if (!pendingOpenUcId) return
+    if (artUseCases.some(u => u.use_case_id === pendingOpenUcId)) {
+      setExpandedUseCaseIds(prev => { const n = new Set(prev); n.add(pendingOpenUcId); return n })
+      setEditingUseCaseId(pendingOpenUcId)
+      setPendingOpenUcId(null)
+      setTimeout(() => {
+        document.getElementById(`uc-card-${pendingOpenUcId}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 50)
+    }
+  }, [artUseCases, pendingOpenUcId])
 
   // ─── Actions ────────────────────────────────────────────────────────────────
 
@@ -619,11 +630,12 @@ export default function PlanPage() {
     setTeamsData(prev => prev.map(td => td.team.id !== teamId ? td : { ...td, allocations: { ...td.allocations, [capId]: value } }))
   }
 
-  const handleAddUseCase = async () => {
-    if (!art || !selectedUseCaseToAdd) return
+  const handleAddUseCaseDirect = async (ucId: string) => {
+    if (!art) return
     try {
-      await addUseCaseToART(art.id, selectedUseCaseToAdd, teamsData.map(td => td.team.id))
-      setSelectedUseCaseToAdd(''); setShowAddUseCase(false); loadData()
+      await addUseCaseToART(art.id, ucId, teamsData.map(td => td.team.id))
+      setPendingOpenUcId(ucId)
+      loadData()
     } catch { setError('Fehler beim Hinzufügen des Use Case.') }
   }
 
@@ -1885,6 +1897,52 @@ export default function PlanPage() {
           <CollapsibleSection title="Planung Teil 1 – Use Case Erprobung & Nutzung" subtitle="Geplante Verwendungen von AI Use Cases pro Team" accent="dark-blue">
             <div className="space-y-4">
               {(() => {
+                const notAdded = availableUseCases
+                if (notAdded.length === 0) return null
+                const withPotential = notAdded.filter(uc => {
+                  const ucCapIds = useCaseCapLinks.filter(l => l.use_case_id === uc.id).map(l => l.capability_id)
+                  const ucTeamTypeIds = useCaseTeamTypeLinks.filter(l => l.use_case_id === uc.id).map(l => l.team_type_id)
+                  if (ucCapIds.length === 0 && ucTeamTypeIds.length === 0) return false
+                  return teamsData.some(td => {
+                    const capFits = ucCapIds.some(capId => (td.allocations[capId] ?? 0) > 0)
+                    const tdTypeIds = teamTeamTypes.filter(ttt => ttt.team_id === td.team.id).map(ttt => ttt.team_type_id)
+                    const typeFits = ucTeamTypeIds.some(ttId => tdTypeIds.includes(ttId))
+                    return capFits || typeFits
+                  })
+                })
+                const rest = notAdded.filter(uc => !withPotential.includes(uc))
+                const renderRow = (uc: AIUseCase) => (
+                  <div key={uc.id} className="flex items-center justify-between py-1.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-sm text-gray-800 truncate">{uc.title}</span>
+                      {uc.type === 'local' && <span className="text-[9px] px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded-full font-medium shrink-0">lokal</span>}
+                    </div>
+                    {editable && (
+                      <button type="button" onClick={() => handleAddUseCaseDirect(uc.id)}
+                        className="ml-4 shrink-0 px-3 py-1 text-xs font-medium text-brand-600 border border-brand-200 hover:bg-brand-50 rounded-lg transition-colors">
+                        Hinzufügen
+                      </button>
+                    )}
+                  </div>
+                )
+                return (
+                  <div className="bg-gray-50 rounded-xl border border-gray-200 p-4 no-print">
+                    {withPotential.length > 0 && (
+                      <>
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Nicht zugeordnete Use Cases mit Potenzial</p>
+                        <div className="divide-y divide-gray-200 mb-3">{withPotential.map(renderRow)}</div>
+                      </>
+                    )}
+                    {rest.length > 0 && (
+                      <>
+                        <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">Restliche nicht zugeordnete Use Cases</p>
+                        <div className="divide-y divide-gray-200">{rest.map(renderRow)}</div>
+                      </>
+                    )}
+                  </div>
+                )
+              })()}
+              {(() => {
                 const sortedUsedUcIds = [...usedUseCaseIds].sort((a, b) => {
                   const ra = artUseCaseRatings.find(r => r.use_case_id === a)
                   const rb = artUseCaseRatings.find(r => r.use_case_id === b)
@@ -1910,31 +1968,56 @@ export default function PlanPage() {
                   const getCapColor = (id: string) => capabilities.find(c => c.id === id)?.color ?? '#6366f1'
                   const existingDates = artUseCaseDates.filter(d => d.use_case_id === ucId)
 
+                  const ucCapIds = useCaseCapLinks.filter(l => l.use_case_id === ucId).map(l => l.capability_id)
+                  const ucTeamTypeIds = useCaseTeamTypeLinks.filter(l => l.use_case_id === ucId).map(l => l.team_type_id)
+                  const noFitTeamIds = new Set(
+                    teamsData.filter(td => {
+                      if (ucCapIds.length === 0 && ucTeamTypeIds.length === 0) return false
+                      const capFits = ucCapIds.some(capId => (td.allocations[capId] ?? 0) > 0)
+                      const teamTypeIds = teamTeamTypes.filter(ttt => ttt.team_id === td.team.id).map(ttt => ttt.team_type_id)
+                      const typeFits = ucTeamTypeIds.some(ttId => teamTypeIds.includes(ttId))
+                      return !(capFits || typeFits)
+                    }).map(td => td.team.id)
+                  )
+
+                  const incomplete = teamsData.some(td => {
+                    const existing = artUseCases.find(u => u.use_case_id === ucId && u.team_id === td.team.id)
+                    return !existing || (['open', 'in_clarification'] as ARTUseCaseStatus[]).includes(existing.status)
+                  })
+                  const hasDateConflict = artUseCaseDates.filter(d => d.use_case_id === ucId).some(d => {
+                    if (d.pilot_from && d.rollout_from && d.pilot_from > d.rollout_from) return true
+                    if (d.rollout_from && d.full_usage_from && d.rollout_from > d.full_usage_from) return true
+                    if (uc.available_from) {
+                      if (d.pilot_from && d.pilot_from < uc.available_from) return true
+                      if (d.rollout_from && d.rollout_from < uc.available_from) return true
+                      if (d.full_usage_from && d.full_usage_from < uc.available_from) return true
+                    }
+                    return false
+                  })
+
                   return (
-                    <div key={ucId} className="bg-white rounded-xl border border-gray-200 p-5 print-no-break">
+                    <div id={`uc-card-${ucId}`} key={ucId} className="bg-white rounded-xl border border-gray-200 p-5 print-no-break">
                       <div
                         className="flex items-start justify-between cursor-pointer"
                         onClick={() => !isEditingThis && toggleUseCaseExpand(ucId)}
                       >
                         <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${incomplete ? 'bg-gray-100 text-gray-500' : 'bg-green-50 text-green-700'}`}>
+                              {incomplete ? 'Planung unvollständig' : 'Planung vollständig'}
+                            </span>
+                            {hasDateConflict && (
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-orange-50 text-orange-700">Terminkonflikte</span>
+                            )}
+                          </div>
                           <div className="flex items-center gap-2 flex-wrap">
                             <button type="button" onClick={e => { e.stopPropagation(); setDetailUseCaseId(ucId) }}
                               className="text-base font-semibold text-gray-900 hover:text-brand-600 text-left">
-                              Use Case {uc.title}
+                              {uc.title}
                             </button>
                             {uc.type === 'local' && (
                               <span className="text-[9px] px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded-full font-medium whitespace-nowrap">lokal</span>
                             )}
-                            {useCaseTeamTypeLinks.filter(l => l.use_case_id === ucId).map(l => {
-                              const tt = teamTypes.find(t => t.id === l.team_type_id)
-                              if (!tt) return null
-                              return (
-                                <span key={l.team_type_id} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium text-white"
-                                  style={{ backgroundColor: tt.color ?? '#6366f1' }}>
-                                  {tt.name}
-                                </span>
-                              )
-                            })}
                           </div>
                           {!isExpanded && !isEditingThis && uc.description && (
                             <p className="text-xs text-gray-500 mt-0.5 truncate">{uc.description}</p>
@@ -1968,6 +2051,7 @@ export default function PlanPage() {
                             capLinks={capLinks}
                             capabilities={capabilities}
                             existingDates={existingDates}
+                            noFitTeamIds={noFitTeamIds}
                             editable={editable}
                             isEditing={isEditingThis}
                             saving={saving}
@@ -1982,31 +2066,7 @@ export default function PlanPage() {
                   )
                 })
               })()}
-              {usedUseCaseIds.length === 0 && <p className="text-gray-400 text-sm text-center py-4">Noch keine AI Use Cases geplant.</p>}
-
-              {editable && (showAddUseCase ? (
-                <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3 no-print">
-                  <h4 className="text-sm font-semibold text-gray-700">AI Use Case hinzufügen</h4>
-                  {availableUseCases.length === 0 ? (
-                    <p className="text-xs text-gray-400">Alle verfügbaren AI Use Cases sind bereits erfasst.</p>
-                  ) : (
-                    <select aria-label="AI Use Case auswählen" value={selectedUseCaseToAdd} onChange={e => setSelectedUseCaseToAdd(e.target.value)}
-                      className="w-full max-w-md px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-brand-500">
-                      <option value="">– Use Case auswählen –</option>
-                      {availableUseCases.map(uc => <option key={uc.id} value={uc.id}>{uc.title}</option>)}
-                    </select>
-                  )}
-                  <div className="flex gap-2">
-                    <button type="button" onClick={handleAddUseCase} disabled={!selectedUseCaseToAdd}
-                      className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg">Hinzufügen</button>
-                    <button type="button" onClick={() => { setShowAddUseCase(false); setSelectedUseCaseToAdd('') }} className="px-4 py-2 text-sm text-gray-600">Abbrechen</button>
-                  </div>
-                </div>
-              ) : (
-                <button type="button" onClick={() => setShowAddUseCase(true)}
-                  className="w-full py-3 border-2 border-dashed border-gray-300 text-sm text-gray-600 hover:border-brand-400 hover:text-brand-600 rounded-xl transition-colors no-print">
-                  + AI Use Case hinzufügen</button>
-              ))}
+              {usedUseCaseIds.length === 0 && availableUseCases.length === 0 && <p className="text-gray-400 text-sm text-center py-4">Noch keine AI Use Cases vorhanden.</p>}
             </div>
           </CollapsibleSection>
 
@@ -3053,6 +3113,7 @@ type UseCasePlanTableProps = {
   capLinks: AIUseCaseCapability[]
   capabilities: BizDevOpsCapability[]
   existingDates: ARTUseCaseDateRow[]
+  noFitTeamIds: Set<string>
   editable: boolean
   isEditing: boolean
   saving: boolean
@@ -3080,7 +3141,7 @@ const PLAN_STATUS_LABEL: Record<ARTUseCaseStatus, string> = {
 }
 
 function UseCasePlanTable({
-  useCase, teams, statusRows, capLinks, capabilities, existingDates,
+  useCase, teams, statusRows, capLinks, capabilities, existingDates, noFitTeamIds,
   editable, isEditing, saving, onEdit, onSave, onRemove, onClose,
 }: UseCasePlanTableProps) {
   const sortedTeams = [...teams].sort((a, b) => a.name.localeCompare(b.name, 'de'))
@@ -3223,6 +3284,7 @@ function UseCasePlanTable({
             <thead>
               <tr className="text-left text-[10px] text-gray-500 bg-gray-50 border-b border-gray-200">
                 <th className="px-4 py-2.5 font-semibold">Team</th>
+                <th className="px-3 py-2.5 font-semibold"></th>
                 <th className="px-4 py-2.5 font-semibold">Planungsstatus</th>
                 {hasCaps && <>
                   <th className="px-4 py-2.5 font-semibold">Prüfung ab</th>
@@ -3236,6 +3298,7 @@ function UseCasePlanTable({
                 const team = sortedTeams.find(t => t.id === row.teamId)!
                 const isPlanned = (['planned', 'in_progress', 'completed'] as ARTUseCaseStatus[]).includes(row.status)
                 const isNotNeeded = row.status === 'no_deployment'
+                const isNoFit = noFitTeamIds.has(row.teamId)
                 const borderClass = ri < viewRows.length - 1 ? 'border-b border-gray-100' : ''
                 const tDates = existingDates.filter(d => d.team_id === row.teamId)
                 const capVals = capLinks.map(link => tDates.find(d => d.capability_id === link.capability_id))
@@ -3245,10 +3308,13 @@ function UseCasePlanTable({
                   (d?.full_usage_from ?? null) === (capVals[0]?.full_usage_from ?? null)
                 )
 
+                const noFitCell = <td className="px-3 py-2.5">{isNoFit && <span className="text-[10px] text-gray-400 whitespace-nowrap">Keine Passung</span>}</td>
+
                 if (!isPlanned || !hasCaps) {
                   return (
                     <tr key={row.teamId} className={`${borderClass} ${isNotNeeded ? 'opacity-40' : ''}`}>
-                      <td className="px-4 py-2.5 font-medium text-gray-900">{team.name}</td>
+                      <td className={`px-4 py-2.5 font-medium ${isNoFit ? 'text-gray-400' : 'text-gray-900'}`}>{team.name}</td>
+                      {noFitCell}
                       <td className="px-4 py-2.5">
                         <span className={`px-2 py-0.5 rounded-full font-medium text-[10px] ${PLAN_STATUS_BADGE[row.status]}`}>
                           {PLAN_STATUS_LABEL[row.status]}
@@ -3263,9 +3329,10 @@ function UseCasePlanTable({
                   const firstD = capVals[0]
                   return (
                     <tr key={row.teamId} className={`${borderClass} bg-blue-50/20`}>
-                      <td className="px-4 py-2.5 font-medium text-gray-900">{team.name}</td>
+                      <td className={`px-4 py-2.5 font-medium ${isNoFit ? 'text-gray-400' : 'text-gray-900'}`}>{team.name}</td>
+                      {noFitCell}
                       <td className="px-4 py-2.5">
-                        <span className={`px-2 py-0.5 rounded-full font-medium text-[10px] ${PLAN_STATUS_BADGE['planned']}`}>Geplant</span>
+                        <span className={`px-2 py-0.5 rounded-full font-medium text-[10px] ${PLAN_STATUS_BADGE[row.status]}`}>{PLAN_STATUS_LABEL[row.status]}</span>
                       </td>
                       <td className="px-4 py-2.5 tabular-nums text-gray-700">{fmtDate(firstD?.pilot_from ?? null)}</td>
                       <td className={`px-4 py-2.5 tabular-nums font-medium ${isConflict(firstD?.rollout_from) ? 'text-red-600' : 'text-gray-700'}`}>{fmtDate(firstD?.rollout_from ?? null)}</td>
@@ -3277,9 +3344,10 @@ function UseCasePlanTable({
                 return (
                   <Fragment key={row.teamId}>
                     <tr className="bg-blue-50/20">
-                      <td className="px-4 pt-2.5 pb-1 font-medium text-gray-900">{team.name}</td>
+                      <td className={`px-4 pt-2.5 pb-1 font-medium ${isNoFit ? 'text-gray-400' : 'text-gray-900'}`}>{team.name}</td>
+                      {noFitCell}
                       <td className="px-4 pt-2.5 pb-1">
-                        <span className={`px-2 py-0.5 rounded-full font-medium text-[10px] ${PLAN_STATUS_BADGE['planned']}`}>Geplant</span>
+                        <span className={`px-2 py-0.5 rounded-full font-medium text-[10px] ${PLAN_STATUS_BADGE[row.status]}`}>{PLAN_STATUS_LABEL[row.status]}</span>
                       </td>
                       {hasCaps && <td colSpan={3} />}
                     </tr>
@@ -3295,6 +3363,7 @@ function UseCasePlanTable({
                               {getCapName(link.capability_id)}
                             </span>
                           </td>
+                          <td />
                           <td />
                           <td className="pb-2 px-4 tabular-nums text-gray-600">{fmtDate(d?.pilot_from ?? null)}</td>
                           <td className={`pb-2 px-4 tabular-nums font-medium ${isConflict(d?.rollout_from) ? 'text-red-600' : 'text-gray-600'}`}>{fmtDate(d?.rollout_from ?? null)}</td>
@@ -3334,6 +3403,7 @@ function UseCasePlanTable({
           <thead>
             <tr className="text-left text-[10px] text-gray-500 bg-gray-50 border-b border-gray-200">
               <th className="px-4 py-2.5 font-semibold">Team</th>
+              <th className="px-3 py-2.5 font-semibold"></th>
               <th className="px-4 py-2.5 font-semibold">Planungsstatus</th>
               {multiCap && <th className="px-4 py-2.5 font-semibold">Capabilities</th>}
               {hasCaps && <>
@@ -3346,13 +3416,15 @@ function UseCasePlanTable({
           <tbody>
             {rows.map((row, ri) => {
               const team = sortedTeams.find(t => t.id === row.teamId)!
-              const isPlanned = row.status === 'planned'
+              const isPlanned = (['planned', 'in_progress', 'completed'] as ARTUseCaseStatus[]).includes(row.status)
+              const isNoFit = noFitTeamIds.has(row.teamId)
               const showPerCap = isPlanned && hasCaps && !row.useAllCaps
               const borderClass = (ri < rows.length - 1 && !showPerCap) ? 'border-b border-gray-100' : ''
               return (
                 <Fragment key={row.teamId}>
                   <tr className={borderClass}>
-                    <td className="px-4 py-2 font-medium text-gray-900 align-top">{team.name}</td>
+                    <td className={`px-4 py-2 font-medium align-top ${isNoFit ? 'text-gray-400' : 'text-gray-900'}`}>{team.name}</td>
+                    <td className="px-3 py-2 align-top">{isNoFit && <span className="text-[10px] text-gray-400 whitespace-nowrap">Keine Passung</span>}</td>
                     <td className="px-4 py-2 align-top">
                       <select value={row.status} title="Planungsstatus"
                         onChange={e => setStatus(row.teamId, e.target.value as ARTUseCaseStatus)}
@@ -3401,6 +3473,7 @@ function UseCasePlanTable({
                           {getCapName(link.capability_id)}
                         </span>
                       </td>
+                      <td />
                       {multiCap && <td />}
                       {(() => {
                         const cd = row.capDates[link.capability_id] ?? { pilot_from: '', rollout_from: '', full_usage_from: '' }
