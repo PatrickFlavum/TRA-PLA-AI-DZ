@@ -870,7 +870,7 @@ export async function loadARTUseCases(artId: string): Promise<ARTUseCase[]> {
 
 export async function addUseCaseToART(artId: string, useCaseId: string, teamIds: string[]): Promise<void> {
   if (teamIds.length === 0) return
-  const rows = teamIds.map(team_id => ({ art_id: artId, use_case_id: useCaseId, team_id, status: 'not_planned' as const }))
+  const rows = teamIds.map(team_id => ({ art_id: artId, use_case_id: useCaseId, team_id, status: 'open' as const }))
   const { error } = await supabase
     .from('art_ai_use_cases')
     .upsert(rows, { onConflict: 'art_id,use_case_id,team_id', ignoreDuplicates: true })

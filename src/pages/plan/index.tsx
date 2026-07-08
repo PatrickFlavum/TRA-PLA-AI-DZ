@@ -643,8 +643,9 @@ export default function PlanPage() {
     setSaving(true)
     try {
       await Promise.all(rows.map(r => upsertARTUseCaseStatus({ art_id: art.id, use_case_id: useCaseId, team_id: r.team_id, status: r.status })))
-      const plannedTeamIds = rows.filter(r => r.status === 'planned').map(r => r.team_id)
-      const notPlannedTeamIds = rows.filter(r => r.status !== 'planned').map(r => r.team_id)
+      const activeStatuses: ARTUseCaseStatus[] = ['planned', 'in_progress', 'completed']
+      const plannedTeamIds = rows.filter(r => activeStatuses.includes(r.status)).map(r => r.team_id)
+      const notPlannedTeamIds = rows.filter(r => !activeStatuses.includes(r.status)).map(r => r.team_id)
       await Promise.all(notPlannedTeamIds.map(teamId => deleteARTUseCaseDateRows(art.id, useCaseId, teamId)))
       const relevantDates = dateRows.filter(d => plannedTeamIds.includes(d.teamId))
       await Promise.all(relevantDates.map(d => upsertARTUseCaseDateRow({
@@ -1656,7 +1657,7 @@ export default function PlanPage() {
                 hasRating: boolean
               }
               const rows: UcRankRow[] = useCases.map(uc => {
-                const notNeededTeamIds = artUseCases.filter(u => u.use_case_id === uc.id && u.status === 'not_needed').map(u => u.team_id)
+                const notNeededTeamIds = artUseCases.filter(u => u.use_case_id === uc.id && u.status === 'no_deployment').map(u => u.team_id)
                 const ucCapIds = useCaseCapLinks.filter(l => l.use_case_id === uc.id).map(l => l.capability_id)
                 const eligibleTeams = teamsData.filter(td => {
                   if (notNeededTeamIds.includes(td.team.id)) return false
@@ -1900,7 +1901,7 @@ export default function PlanPage() {
                   const capLinks = useCaseCapLinks.filter(l => l.use_case_id === ucId)
                   const statusRows: ARTUseCase[] = teamsData.map(td => {
                     const existing = artUseCases.find(u => u.use_case_id === ucId && u.team_id === td.team.id)
-                    return existing ?? { id: `new-${ucId}-${td.team.id}`, art_id: art.id, use_case_id: ucId, team_id: td.team.id, status: 'not_planned', created_at: '' }
+                    return existing ?? { id: `new-${ucId}-${td.team.id}`, art_id: art.id, use_case_id: ucId, team_id: td.team.id, status: 'open', created_at: '' }
                   })
                   const isEditingThis = editingUseCaseId === ucId
                   const isExpanded = expandedUseCaseIds.has(ucId)
@@ -2058,7 +2059,7 @@ export default function PlanPage() {
               const pd = (s: string | null) => s ? new Date(s) : null
 
               const sortedUcIds = useCases
-                .filter(uc => artUseCases.some(u => u.use_case_id === uc.id && u.status === 'planned'))
+                .filter(uc => artUseCases.some(u => u.use_case_id === uc.id && (['planned', 'in_progress', 'completed'] as ARTUseCaseStatus[]).includes(u.status)))
                 .map(uc => {
                   const r = artUseCaseRatings.find(x => x.use_case_id === uc.id)
                   return { uc, score: (r?.nutzen ?? 1) * (r?.skalierbarkeit ?? 1) * (r?.akzeptanz ?? 1) }
@@ -2070,7 +2071,7 @@ export default function PlanPage() {
               teamsData.forEach(td => {
                 const ucEntries: RmUcEntry[] = []
                 sortedUcIds.forEach((ucId, rank) => {
-                  if (!artUseCases.find(u => u.use_case_id === ucId && u.team_id === td.team.id && u.status === 'planned')) return
+                  if (!artUseCases.find(u => u.use_case_id === ucId && u.team_id === td.team.id && (['planned', 'in_progress', 'completed'] as ARTUseCaseStatus[]).includes(u.status))) return
                   const uc = useCases.find(u => u.id === ucId)!
                   const capRows: RmCapRow[] = artUseCaseDates
                     .filter(d => d.use_case_id === ucId && d.team_id === td.team.id && (d.pilot_from || d.rollout_from || d.full_usage_from))
@@ -2735,15 +2736,21 @@ function AIRadarChart({ faehigkeiten, zugang, motivation }: { faehigkeiten: numb
 // ─── AI Use Case shared status maps ─────────────────────────────────────────
 
 const USE_CASE_STATUS_LABEL: Record<ARTUseCaseStatus, string> = {
+  open: 'Offen',
+  in_clarification: 'In Klärung',
   planned: 'Geplant',
-  not_planned: 'Nicht geplant',
-  not_needed: 'Nicht benötigt',
+  in_progress: 'In Umsetzung',
+  completed: 'Abgeschlossen',
+  no_deployment: 'Kein Einsatz',
 }
 
 const USE_CASE_STATUS_BADGE: Record<ARTUseCaseStatus, string> = {
+  open: 'bg-gray-100 text-gray-600',
+  in_clarification: 'bg-amber-50 text-amber-700',
   planned: 'bg-blue-50 text-blue-700',
-  not_planned: 'bg-gray-100 text-gray-600',
-  not_needed: 'bg-amber-50 text-amber-700',
+  in_progress: 'bg-indigo-50 text-indigo-700',
+  completed: 'bg-green-50 text-green-700',
+  no_deployment: 'bg-gray-50 text-gray-400',
 }
 
 // ─── AI Use Case View ───────────────────────────────────────────────────────
@@ -2786,7 +2793,7 @@ function UseCaseView({ useCase, teams, statusRows, capabilities, capLinks, exist
       </div>
 
       <div className="space-y-3">
-        {statusRows.filter(r => r.status !== 'not_needed').map(r => {
+        {statusRows.filter(r => r.status !== 'no_deployment').map(r => {
           const teamDates = existingDates.filter(d => d.team_id === r.team_id)
           return (
             <div key={r.team_id}>
@@ -2796,7 +2803,7 @@ function UseCaseView({ useCase, teams, statusRows, capabilities, capLinks, exist
                   {USE_CASE_STATUS_LABEL[r.status]}
                 </span>
               </div>
-              {r.status === 'planned' && capLinks.length > 0 && (
+              {(['planned', 'in_progress', 'completed'] as ARTUseCaseStatus[]).includes(r.status) && capLinks.length > 0 && (
                 <div className="ml-4 mt-1">
                   <table className="text-xs w-full">
                     <thead>
@@ -2834,7 +2841,7 @@ function UseCaseView({ useCase, teams, statusRows, capabilities, capLinks, exist
         {statusRows.length === 0 && <p className="text-gray-400 text-xs">Keine Teams in diesem ART vorhanden.</p>}
       </div>
       {(() => {
-        const notNeededTeams = statusRows.filter(r => r.status === 'not_needed')
+        const notNeededTeams = statusRows.filter(r => r.status === 'no_deployment')
         if (notNeededTeams.length === 0) return null
         return (
           <p className="text-xs text-gray-400 mt-3">
@@ -2956,13 +2963,16 @@ function UseCaseEditMode({ useCase, teams, statusRows, capLinks, capabilities, e
               <select id={`uc-status-${useCase.id}-${s.teamId}`} value={s.status}
                 onChange={e => updateStatus(s.teamId, e.target.value as ARTUseCaseStatus)}
                 className="px-2 py-1 border border-gray-200 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-brand-500">
-                <option value="not_planned">Nicht geplant</option>
+                <option value="open">Offen</option>
+                <option value="in_clarification">In Klärung</option>
                 <option value="planned">Geplant</option>
-                <option value="not_needed">Nicht benötigt</option>
+                <option value="in_progress">In Umsetzung</option>
+                <option value="completed">Abgeschlossen</option>
+                <option value="no_deployment">Kein Einsatz</option>
               </select>
             </div>
 
-            {s.status === 'planned' && capLinks.length > 0 && (
+            {(['planned', 'in_progress', 'completed'] as ARTUseCaseStatus[]).includes(s.status) && capLinks.length > 0 && (
               <div className="pl-2 mt-2">
                 <p className="text-xs font-semibold text-gray-600 mb-2">Geplante Daten</p>
                 {capLinks.length > 1 && (
@@ -3053,14 +3063,20 @@ type UseCasePlanTableProps = {
 }
 
 const PLAN_STATUS_BADGE: Record<ARTUseCaseStatus, string> = {
+  open: 'bg-gray-100 text-gray-600',
+  in_clarification: 'bg-amber-50 text-amber-700',
   planned: 'bg-blue-50 text-blue-700',
-  not_planned: 'bg-amber-50 text-amber-700',
-  not_needed: 'bg-gray-50 text-gray-400',
+  in_progress: 'bg-indigo-50 text-indigo-700',
+  completed: 'bg-green-50 text-green-700',
+  no_deployment: 'bg-gray-50 text-gray-400',
 }
 const PLAN_STATUS_LABEL: Record<ARTUseCaseStatus, string> = {
+  open: 'Offen',
+  in_clarification: 'In Klärung',
   planned: 'Geplant',
-  not_planned: 'Nicht geplant',
-  not_needed: 'Nicht benötigt',
+  in_progress: 'In Umsetzung',
+  completed: 'Abgeschlossen',
+  no_deployment: 'Kein Einsatz',
 }
 
 function UseCasePlanTable({
@@ -3076,7 +3092,7 @@ function UseCasePlanTable({
 
   const buildRows = (): PlanRow[] => sortedTeams.map(team => {
     const sr = statusRows.find(r => r.team_id === team.id)
-    const status: ARTUseCaseStatus = sr?.status ?? 'not_planned'
+    const status: ARTUseCaseStatus = sr?.status ?? 'open'
     const tDates = existingDates.filter(d => d.team_id === team.id)
 
     const capDates: Record<string, { pilot_from: string; rollout_from: string; full_usage_from: string }> = {}
@@ -3144,7 +3160,7 @@ function UseCasePlanTable({
     }))
     const dateRows: { teamId: string; capId: string; pilot_from: string | null; rollout_from: string | null; full_usage_from: string | null }[] = []
     rows.forEach(r => {
-      if (r.status !== 'planned' || !hasCaps) return
+      if (!(['planned', 'in_progress', 'completed'] as ARTUseCaseStatus[]).includes(r.status) || !hasCaps) return
       capLinks.forEach(link => {
         const d = r.useAllCaps ? r.allDates : r.capDates[link.capability_id]
         dateRows.push({
@@ -3169,7 +3185,7 @@ function UseCasePlanTable({
   })
 
   const hasValidationErrors = rows.some(r => {
-    if (r.status !== 'planned' || !hasCaps) return false
+    if (!(['planned', 'in_progress', 'completed'] as ARTUseCaseStatus[]).includes(r.status) || !hasCaps) return false
     const check = (d: { pilot_from: string; rollout_from: string; full_usage_from: string }) => {
       const e = getDatesErr(d); return e.rollout_from || e.full_usage_from
     }
@@ -3218,8 +3234,8 @@ function UseCasePlanTable({
             <tbody>
               {viewRows.map((row, ri) => {
                 const team = sortedTeams.find(t => t.id === row.teamId)!
-                const isPlanned = row.status === 'planned'
-                const isNotNeeded = row.status === 'not_needed'
+                const isPlanned = (['planned', 'in_progress', 'completed'] as ARTUseCaseStatus[]).includes(row.status)
+                const isNotNeeded = row.status === 'no_deployment'
                 const borderClass = ri < viewRows.length - 1 ? 'border-b border-gray-100' : ''
                 const tDates = existingDates.filter(d => d.team_id === row.teamId)
                 const capVals = capLinks.map(link => tDates.find(d => d.capability_id === link.capability_id))
@@ -3341,9 +3357,12 @@ function UseCasePlanTable({
                       <select value={row.status} title="Planungsstatus"
                         onChange={e => setStatus(row.teamId, e.target.value as ARTUseCaseStatus)}
                         className="w-36 px-2 py-1 border border-gray-200 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-brand-500">
+                        <option value="open">Offen</option>
+                        <option value="in_clarification">In Klärung</option>
                         <option value="planned">Geplant</option>
-                        <option value="not_planned">Nicht geplant</option>
-                        <option value="not_needed">Nicht benötigt</option>
+                        <option value="in_progress">In Umsetzung</option>
+                        <option value="completed">Abgeschlossen</option>
+                        <option value="no_deployment">Kein Einsatz</option>
                       </select>
                     </td>
                     {multiCap && (

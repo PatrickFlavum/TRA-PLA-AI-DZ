@@ -306,7 +306,7 @@ create table if not exists art_ai_use_cases (
   art_id      uuid        not null references arts(id) on delete cascade,
   use_case_id uuid        not null references ai_use_cases(id) on delete cascade,
   team_id     uuid        not null references teams(id) on delete cascade,
-  status      text        not null default 'not_planned',
+  status      text        not null default 'open',
   created_at  timestamptz not null default now(),
   unique (art_id, use_case_id, team_id)
 );
@@ -316,9 +316,9 @@ do $$ begin
   if exists (select 1 from information_schema.columns
              where table_name = 'art_ai_use_cases' and column_name = 'planned') then
     alter table art_ai_use_cases add column if not exists status text;
-    update art_ai_use_cases set status = case when planned then 'planned' else 'not_planned' end
+    update art_ai_use_cases set status = case when planned then 'planned' else 'open' end
       where status is null;
-    alter table art_ai_use_cases alter column status set default 'not_planned';
+    alter table art_ai_use_cases alter column status set default 'open';
     alter table art_ai_use_cases alter column status set not null;
     alter table art_ai_use_cases drop column planned;
   end if;
@@ -340,10 +340,15 @@ do $$ begin
   end if;
 end $$;
 
+-- Migrate old status values and update constraint to 6-value set
+alter table art_ai_use_cases drop constraint if exists art_ai_use_cases_status_check;
+alter table art_ai_use_cases alter column status set default 'open';
+update art_ai_use_cases set status = 'open'          where status = 'not_planned';
+update art_ai_use_cases set status = 'no_deployment' where status = 'not_needed';
 do $$ begin
   if not exists (select 1 from pg_constraint where conname = 'art_ai_use_cases_status_check') then
     alter table art_ai_use_cases add constraint art_ai_use_cases_status_check
-      check (status in ('planned', 'not_planned', 'not_needed'));
+      check (status in ('open', 'in_clarification', 'planned', 'in_progress', 'completed', 'no_deployment'));
   end if;
 end $$;
 

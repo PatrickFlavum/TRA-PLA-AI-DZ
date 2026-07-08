@@ -169,7 +169,7 @@ export type AIUseCaseMaturityLevel = {
   maturity_level_id: string
 }
 
-export type ARTUseCaseStatus = 'planned' | 'not_planned' | 'not_needed'
+export type ARTUseCaseStatus = 'open' | 'in_clarification' | 'planned' | 'in_progress' | 'completed' | 'no_deployment'
 
 export type ARTUseCase = {
   id: string
