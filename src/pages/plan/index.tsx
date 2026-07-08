@@ -1527,7 +1527,7 @@ export default function PlanPage() {
                                   <div><span className="font-medium text-gray-700">AI-Zugang</span> <span className="text-gray-400 ml-1">Stufe {td.team.ai_zugang}</span><br /><span className="text-gray-500">{AI_ZUGANG_LABELS[td.team.ai_zugang]}</span></div>
                                   <div><span className="font-medium text-gray-700">AI-Motivation</span> <span className="text-gray-400 ml-1">Stufe {td.team.ai_motivation}</span><br /><span className="text-gray-500">{AI_MOTIVATION_LABELS[td.team.ai_motivation]}</span></div>
                                 </div>
-                                <div className="flex-1 max-w-xs">
+                                <div className="flex-1 max-w-md">
                                   <AIRadarChart faehigkeiten={td.team.ai_faehigkeiten} zugang={td.team.ai_zugang} motivation={td.team.ai_motivation} />
                                 </div>
                               </div>
@@ -2702,7 +2702,7 @@ function AIRadarChart({ faehigkeiten, zugang, motivation }: { faehigkeiten: numb
       {/* level numbers along right axis */}
       {Array.from({ length: levels }, (_, i) => {
         const [lx, ly] = pt(angles[1], i + 1)
-        return <text key={i} x={lx + 3} y={ly} dominantBaseline="middle" fontSize={4.5} fill="#94a3b8">{i + 1}</text>
+        return <text key={i} x={lx + 3} y={ly} dominantBaseline="middle" fontSize={5.5} fill="#94a3b8">{i + 1}</text>
       })}
       <polygon points={dataPolygon} fill="rgba(79,70,229,0.13)" stroke="#4f46e5" strokeWidth={2} strokeLinejoin="round" />
       {angles.map((a, i) => {
@@ -2715,10 +2715,10 @@ function AIRadarChart({ faehigkeiten, zugang, motivation }: { faehigkeiten: numb
         const dx = i === 0 ? 0 : i === 1 ? 10 : -10
         const dy = i === 0 ? -8 : 1
         const anchor = i === 0 ? 'middle' : i === 1 ? 'start' : 'end'
-        return <text key={i} x={px + dx} y={py + dy} textAnchor={anchor} dominantBaseline="middle" fontSize={8} fill="#3730a3" fontWeight="700">{values[i]}</text>
+        return <text key={i} x={px + dx} y={py + dy} textAnchor={anchor} dominantBaseline="middle" fontSize={10} fill="#3730a3" fontWeight="700">{values[i]}</text>
       })}
       {labelProps.map((lp, i) => (
-        <text key={i} x={lp.x} y={lp.y} textAnchor={lp.anchor} dominantBaseline="auto" fontSize={6} fill="#475569">{lp.label}</text>
+        <text key={i} x={lp.x} y={lp.y} textAnchor={lp.anchor} dominantBaseline="auto" fontSize={7} fill="#475569">{lp.label}</text>
       ))}
     </svg>
   )
