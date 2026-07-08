@@ -2675,7 +2675,7 @@ const AI_MOTIVATION_LABELS: Record<number, string> = {
 }
 
 function AIRadarChart({ faehigkeiten, zugang, motivation }: { faehigkeiten: number; zugang: number; motivation: number }) {
-  const cx = 150, cy = 105, maxR = 72, levels = 5
+  const cx = 190, cy = 135, maxR = 96, levels = 5
   // angles: top (AI-Fähigkeiten), bottom-right (AI-Zugang), bottom-left (AI-Motivation)
   const angles = [-Math.PI / 2, Math.PI / 6, (5 * Math.PI) / 6]
   const values = [faehigkeiten, zugang, motivation]
@@ -2699,7 +2699,7 @@ function AIRadarChart({ faehigkeiten, zugang, motivation }: { faehigkeiten: numb
   ]
 
   return (
-    <svg viewBox="0 0 300 210" className="w-full" aria-hidden="true">
+    <svg viewBox="0 0 380 270" className="w-full" aria-hidden="true">
       {gridPolygons.map((pts, i) => (
         <polygon key={i} points={pts} fill={i === levels - 1 ? '#f8fafc' : 'none'} stroke="#e2e8f0" strokeWidth={i === levels - 1 ? 1 : 0.6} />
       ))}
@@ -2710,23 +2710,23 @@ function AIRadarChart({ faehigkeiten, zugang, motivation }: { faehigkeiten: numb
       {/* level ticks along right axis */}
       {Array.from({ length: levels }, (_, i) => {
         const [lx, ly] = pt(angles[1], i + 1)
-        return <text key={i} x={lx + 3} y={ly} dominantBaseline="middle" fontSize={5.5} fill="#94a3b8">{i + 1}</text>
+        return <text key={i} x={lx + 3} y={ly} dominantBaseline="middle" fontSize={8} fill="#94a3b8">{i + 1}</text>
       })}
       <polygon points={dataPolygon} fill="rgba(79,70,229,0.13)" stroke="#4f46e5" strokeWidth={2} strokeLinejoin="round" />
       {angles.map((a, i) => {
         const [px, py] = pt(a, values[i])
-        return <circle key={i} cx={px} cy={py} r={4} fill="#4f46e5" />
+        return <circle key={i} cx={px} cy={py} r={5} fill="#4f46e5" />
       })}
       {/* value labels: nudged toward center so they never touch axis labels */}
       {angles.map((a, i) => {
         const [px, py] = pt(a, values[i])
-        const dx = i === 0 ? 0 : i === 1 ? -12 : 12
-        const dy = i === 0 ? 12 : 0
+        const dx = i === 0 ? 0 : i === 1 ? -14 : 14
+        const dy = i === 0 ? 14 : 0
         const anchor = i === 0 ? 'middle' : i === 1 ? 'end' : 'start'
-        return <text key={i} x={px + dx} y={py + dy} textAnchor={anchor} dominantBaseline="middle" fontSize={10} fill="#3730a3" fontWeight="700">{values[i]}</text>
+        return <text key={i} x={px + dx} y={py + dy} textAnchor={anchor} dominantBaseline="middle" fontSize={15} fill="#3730a3" fontWeight="700">{values[i]}</text>
       })}
       {labelProps.map((lp, i) => (
-        <text key={i} x={lp.x} y={lp.y} textAnchor={lp.anchor} dominantBaseline="auto" fontSize={7} fill="#475569">{lp.label}</text>
+        <text key={i} x={lp.x} y={lp.y} textAnchor={lp.anchor} dominantBaseline="auto" fontSize={10.5} fill="#475569">{lp.label}</text>
       ))}
     </svg>
   )
