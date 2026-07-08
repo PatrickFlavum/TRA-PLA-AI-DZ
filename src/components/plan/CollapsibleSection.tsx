@@ -6,17 +6,23 @@ type Props = {
   defaultOpen?: boolean
   hidePrintTitle?: boolean
   children: React.ReactNode
+  accent?: 'dark-blue' | 'light-blue' | 'dark-gray'
 }
 
-export function CollapsibleSection({ title, subtitle, defaultOpen = false, hidePrintTitle = false, children }: Props) {
+export function CollapsibleSection({ title, subtitle, defaultOpen = false, hidePrintTitle = false, children, accent }: Props) {
   const [open, setOpen] = useState(defaultOpen)
+
+  const accentCls = accent === 'dark-blue' ? 'border-l-4 border-l-blue-900 pl-3'
+    : accent === 'light-blue' ? 'border-l-4 border-l-blue-300 pl-3'
+    : accent === 'dark-gray' ? 'border-l-4 border-l-gray-500 pl-3'
+    : ''
 
   return (
     <div className="mb-6 print-no-break">
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center gap-3 pb-3 mb-4 border-b border-gray-200 text-left cursor-pointer hover:opacity-80 transition-opacity no-print"
+        className={`w-full flex items-center gap-3 pb-3 mb-4 border-b border-gray-200 text-left cursor-pointer hover:opacity-80 transition-opacity no-print ${accentCls}`}
       >
         <div className="flex-1 min-w-0">
           <h2 className="text-base font-bold text-gray-900">{title}</h2>

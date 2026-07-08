@@ -63,42 +63,13 @@ export function AdminLayout({ children, title }: Props) {
               </>
             )}
           </div>
-          <div className="flex items-center gap-4">
-            <Link href="/admin/business-divisions" className="text-xs text-gray-500 hover:text-gray-800 transition-colors">
-              Geschäftsbereiche
-            </Link>
-            <Link href="/admin/rollen" className="text-xs text-gray-500 hover:text-gray-800 transition-colors">
-              MA-Rollen
-            </Link>
-            <Link href="/admin/capabilities" className="text-xs text-gray-500 hover:text-gray-800 transition-colors">
-              Capabilities
-            </Link>
-            <Link href="/admin/begleitungsmodi" className="text-xs text-gray-500 hover:text-gray-800 transition-colors">
-              Begleitungsmodi
-            </Link>
-            <Link href="/admin/maturity-levels" className="text-xs text-gray-500 hover:text-gray-800 transition-colors">
-              Maturitätsstufen
-            </Link>
-            <Link href="/admin/ai-use-cases" className="text-xs text-gray-500 hover:text-gray-800 transition-colors">
-              AI Use Cases
-            </Link>
-            <Link href="/admin/quality-checklist" className="text-xs text-gray-500 hover:text-gray-800 transition-colors">
-              Qualitäts-Checkliste
-            </Link>
-            <Link href="/admin/standortbestimmung" className="text-xs text-gray-500 hover:text-gray-800 transition-colors">
-              Standortbestimmung
-            </Link>
-            <Link href="/admin/team-types" className="text-xs text-gray-500 hover:text-gray-800 transition-colors">
-              Team-Typen
-            </Link>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="text-xs text-gray-500 hover:text-gray-800 transition-colors"
-            >
-              Abmelden
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="text-xs text-gray-500 hover:text-gray-800 transition-colors"
+          >
+            Abmelden
+          </button>
         </div>
       </header>
 

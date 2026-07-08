@@ -58,6 +58,28 @@ export default function AdminDashboard() {
     <>
       <Head><title>Admin – AI@DZ Transformation Plans</title></Head>
       <AdminLayout>
+        <div className="bg-white rounded-xl border border-gray-200 p-5 mb-8">
+          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Stammdaten</h2>
+          <div className="flex flex-wrap gap-2">
+            {([
+              { href: '/admin/business-divisions', label: 'Geschäftsbereiche' },
+              { href: '/admin/rollen', label: 'MA-Rollen' },
+              { href: '/admin/capabilities', label: 'Capabilities' },
+              { href: '/admin/begleitungsmodi', label: 'Begleitungsmodi' },
+              { href: '/admin/maturity-levels', label: 'Maturitätsstufen' },
+              { href: '/admin/ai-use-cases', label: 'AI Use Cases' },
+              { href: '/admin/quality-checklist', label: 'Qualitäts-Checkliste' },
+              { href: '/admin/standortbestimmung', label: 'Standortbestimmung' },
+              { href: '/admin/team-types', label: 'Team-Typen' },
+            ] as const).map(({ href, label }) => (
+              <Link key={href} href={href}
+                className="px-3 py-1.5 text-sm font-medium text-brand-700 bg-brand-50 hover:bg-brand-100 rounded-lg transition-colors">
+                {label}
+              </Link>
+            ))}
+          </div>
+        </div>
+
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-gray-900">Arbeitsorganisationen</h1>
           <button

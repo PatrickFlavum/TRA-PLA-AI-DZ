@@ -1076,7 +1076,7 @@ export default function PlanPage() {
         <div className="max-w-5xl mx-auto px-4 py-6">
 
           {/* ══════ HEADER ══════════════════════════════════════════════ */}
-          <CollapsibleSection title="Der ART im Überblick" subtitle="Nützliche Zahlen, Daten und Fakten zum ART" defaultOpen={true} hidePrintTitle>
+          <CollapsibleSection title="Der ART im Überblick" subtitle="Nützliche Zahlen, Daten und Fakten zum ART" defaultOpen={true} hidePrintTitle accent="dark-blue">
 
             {/* ── Zeile 1: Titelbox + ART-Leitung ── */}
             <div className="grid grid-cols-2 gap-4 mb-4">
@@ -1311,7 +1311,7 @@ export default function PlanPage() {
           </CollapsibleSection>
 
           {/* ══════ STANDORTBESTIMMUNG ════════════════════════════════════ */}
-          <CollapsibleSection title="Standortbestimmung Transformation" subtitle="Aktueller Zustand der 10 Faktoren für eine erfolgreiche Transformation">
+          <CollapsibleSection title="Standortbestimmung Transformation" subtitle="Aktueller Zustand der 10 Faktoren für eine erfolgreiche Transformation" accent="dark-blue">
             {(() => {
               const sbMap = new Map(standortbestimmung.map(s => [s.dimension_key, s]))
               const isEditing = editingStandortbestimmung
@@ -1457,7 +1457,7 @@ export default function PlanPage() {
           </CollapsibleSection>
 
           {/* ══════ AKTUELLE TEAM-STRUKTUREN ══════════════════════════════ */}
-          <CollapsibleSection title="Diagnose Teil 1 – Teamsicht" subtitle="Teams, Rollen und Kapazitätsverteilung">
+          <CollapsibleSection title="Diagnose Teil 1 – Teamsicht" subtitle="Teams, Rollen und Kapazitätsverteilung" accent="dark-blue">
             <div className="space-y-4">
               {teamsData.map(td => {
                 const isEditingThis = editingTeamId === td.team.id
@@ -1647,7 +1647,7 @@ export default function PlanPage() {
 
 
           {/* ══════ USE CASE POTENTIALE ═══════════════════════════════════ */}
-          <CollapsibleSection title="Diagnose Teil 2 – Potenziale" subtitle="Use Case Bewertungen und Potenzialbeschreibungen">
+          <CollapsibleSection title="Diagnose Teil 2 – Potenziale" subtitle="Use Case Bewertungen und Potenzialbeschreibungen" accent="dark-blue">
             {(() => {
               type UcRankRow = {
                 uc: AIUseCase
@@ -1881,7 +1881,7 @@ export default function PlanPage() {
           </CollapsibleSection>
 
           {/* ══════ USE CASE PLANUNG ══════════════════════════════════════ */}
-          <CollapsibleSection title="Planung Teil 1 – Use Case Erprobung & Nutzung" subtitle="Geplante Verwendungen von AI Use Cases pro Team">
+          <CollapsibleSection title="Planung Teil 1 – Use Case Erprobung & Nutzung" subtitle="Geplante Verwendungen von AI Use Cases pro Team" accent="dark-blue">
             <div className="space-y-4">
               {(() => {
                 const sortedUsedUcIds = [...usedUseCaseIds].sort((a, b) => {
@@ -2010,7 +2010,7 @@ export default function PlanPage() {
           </CollapsibleSection>
 
           {/* ══════ ROADMAP ═══════════════════════════════════════════════ */}
-          <CollapsibleSection title="Planung Teil 2 – Roadmap" subtitle="Zeitplan mit Meilensteinen und Übersicht über die Erprobung, Einführung und Nutzung der Use Cases">
+          <CollapsibleSection title="Planung Teil 2 – Roadmap" subtitle="Zeitplan mit Meilensteinen und Übersicht über die Erprobung, Einführung und Nutzung der Use Cases" accent="dark-blue">
             <div className="space-y-5">
 
             {/* ── Geplantes Vorgehen ── */}
@@ -2400,15 +2400,15 @@ export default function PlanPage() {
           </CollapsibleSection>}
 
           {/* ══════ OPTIONALE VERTIEFUNGEN & SPEZIFIKA ════════════════════ */}
-          <CollapsibleSection title="Optionale Vertiefung: Technologie- & Plattform-Tiefe" subtitle="Plattformarchitektur, Tool-Stack und technische Abhängigkeiten">
+          <CollapsibleSection title="Optionale Vertiefung: Technologie- & Plattform-Tiefe" subtitle="Plattformarchitektur, Tool-Stack und technische Abhängigkeiten" accent="light-blue">
             <p className="text-sm text-gray-400 italic">Noch kein Inhalt erfasst.</p>
           </CollapsibleSection>
 
-          <CollapsibleSection title="Optionale Vertiefung: Sourcing- & Zusammenarbeitsmodell" subtitle="Make-or-Buy, Partner, Lieferantenstruktur und Kollaborationsmodell">
+          <CollapsibleSection title="Optionale Vertiefung: Sourcing- & Zusammenarbeitsmodell" subtitle="Make-or-Buy, Partner, Lieferantenstruktur und Kollaborationsmodell" accent="light-blue">
             <p className="text-sm text-gray-400 italic">Noch kein Inhalt erfasst.</p>
           </CollapsibleSection>
 
-          <CollapsibleSection title="Optionale Vertiefung: Skill-Matrix & Workforce (WFM)" subtitle="Kompetenzanforderungen, Lückenanalyse und Personalplanung">
+          <CollapsibleSection title="Optionale Vertiefung: Skill-Matrix & Workforce (WFM)" subtitle="Kompetenzanforderungen, Lückenanalyse und Personalplanung" accent="light-blue">
             <div className="space-y-4">
               <div className="bg-white rounded-xl border border-gray-200 p-5">
                 <SummaryTable rows={artSummary} totals={artTotals} />
@@ -2423,23 +2423,23 @@ export default function PlanPage() {
             </div>
           </CollapsibleSection>
 
-          <CollapsibleSection title="Optionale Vertiefung: Ökonomie-Vorschau (qualitativ)" subtitle="Erwarteter Nutzen, Einsparpotenziale und Investitionsrahmen">
+          <CollapsibleSection title="Optionale Vertiefung: Ökonomie-Vorschau (qualitativ)" subtitle="Erwarteter Nutzen, Einsparpotenziale und Investitionsrahmen" accent="light-blue">
             <p className="text-sm text-gray-400 italic">Noch kein Inhalt erfasst.</p>
           </CollapsibleSection>
 
-          <CollapsibleSection title="Optionale Vertiefung: Wirkungsmodell & Metriken" subtitle="Wirkungskette, KPIs und Erfolgsmessung">
+          <CollapsibleSection title="Optionale Vertiefung: Wirkungsmodell & Metriken" subtitle="Wirkungskette, KPIs und Erfolgsmessung" accent="light-blue">
             <p className="text-sm text-gray-400 italic">Noch kein Inhalt erfasst.</p>
           </CollapsibleSection>
 
-          <CollapsibleSection title="Optionale Vertiefung: Governance- & Security" subtitle="Steuerungsmodell, Verantwortlichkeiten und Sicherheitsanforderungen">
+          <CollapsibleSection title="Optionale Vertiefung: Governance- & Security" subtitle="Steuerungsmodell, Verantwortlichkeiten und Sicherheitsanforderungen" accent="light-blue">
             <p className="text-sm text-gray-400 italic">Noch kein Inhalt erfasst.</p>
           </CollapsibleSection>
 
-          <CollapsibleSection title="SES-Spezifika: Enabler-/Service-Track" subtitle="SES-spezifische Enabler, Service-Tracks und Querschnittsthemen">
+          <CollapsibleSection title="SES-Spezifika: Enabler-/Service-Track" subtitle="SES-spezifische Enabler, Service-Tracks und Querschnittsthemen" accent="light-blue">
             <p className="text-sm text-gray-400 italic">Noch kein Inhalt erfasst.</p>
           </CollapsibleSection>
 
-          <CollapsibleSection title="Qualitäts-Checkliste" subtitle="Vollständigkeit und Qualitätssicherung des Transformationsplans">
+          <CollapsibleSection title="Qualitäts-Checkliste" subtitle="Vollständigkeit und Qualitätssicherung des Transformationsplans" accent="dark-gray">
             {checklistItems.length === 0 ? (
               <p className="text-sm text-gray-400 italic">Noch keine Checklisten-Einträge vorhanden. Im Admin-Bereich können diese erfasst werden.</p>
             ) : (
@@ -2495,7 +2495,7 @@ export default function PlanPage() {
           </CollapsibleSection>
 
           {/* ══════ VERSIONSVERLAUF ═══════════════════════════════════════ */}
-          <CollapsibleSection title="Versionsverlauf" subtitle="Alle bisherigen Versionen">
+          <CollapsibleSection title="Versionsverlauf" subtitle="Alle bisherigen Versionen" accent="dark-gray">
             {versions.length === 0 ? <p className="text-gray-400 text-sm">Noch keine Versionen.</p> : (
               <div className="bg-white rounded-xl border border-gray-200 p-5">
                 <table className="w-full text-sm">
