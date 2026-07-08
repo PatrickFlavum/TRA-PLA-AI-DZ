@@ -8,10 +8,11 @@ type Props = {
   children: React.ReactNode
   accent?: 'dark-blue' | 'light-blue' | 'dark-gray'
   printTitle?: string
+  printSubtitle?: string
   isFirstSection?: boolean
 }
 
-export function CollapsibleSection({ title, subtitle, defaultOpen = false, hidePrintTitle = false, children, accent, printTitle, isFirstSection = false }: Props) {
+export function CollapsibleSection({ title, subtitle, defaultOpen = false, hidePrintTitle = false, children, accent, printTitle, printSubtitle, isFirstSection = false }: Props) {
   const [open, setOpen] = useState(defaultOpen)
 
   const accentCls = accent === 'dark-blue' ? 'border-l-4 border-l-blue-900 pl-3'
@@ -41,7 +42,7 @@ export function CollapsibleSection({ title, subtitle, defaultOpen = false, hideP
       {!hidePrintTitle && (
         <div className={`hidden print:block pb-4 mb-6 ${printBorderCls}`}>
           <h2 className="text-2xl font-bold text-gray-900">{printTitle ?? title}</h2>
-          {subtitle && <p className="text-sm text-gray-500 mt-1">{subtitle}</p>}
+          {(printSubtitle ?? subtitle) && <p className="text-sm text-gray-500 mt-1">{printSubtitle ?? subtitle}</p>}
         </div>
       )}
 

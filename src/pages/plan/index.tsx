@@ -26,7 +26,7 @@ import {
   setARTQualityChecklistCompletion,
   loadARTStandortbestimmung, upsertARTStandortbestimmung,
   loadStandortbestimmungDimensionen,
-  loadARTTimelineEntries, createARTTimelineEntry, deleteARTTimelineEntry,
+  loadARTTimelineEntries, createARTTimelineEntry, updateARTTimelineEntry, deleteARTTimelineEntry,
   loadTeamTypes, loadTeamTeamTypesByTeamIds, setTeamTeamTypes as saveTeamTeamTypes,
   loadAllUseCaseTeamTypeLinks,
 } from '@/lib/supabase'
@@ -260,6 +260,7 @@ export default function PlanPage() {
   // Timeline entries
   const [timelineEntries, setTimelineEntries] = useState<ARTTimelineEntry[]>([])
   const [showTimelineModal, setShowTimelineModal] = useState(false)
+  const [editingTimelineEntry, setEditingTimelineEntry] = useState<ARTTimelineEntry | null>(null)
   const [tlTitle, setTlTitle] = useState('')
   const [tlFrom, setTlFrom] = useState('')
   const [tlUntil, setTlUntil] = useState('')
@@ -646,6 +647,20 @@ export default function PlanPage() {
       const entry = await createARTTimelineEntry(art.id, { title: tlTitle.trim(), date_from: tlFrom, date_until: tlUntil })
       setTimelineEntries(prev => [...prev, entry].sort((a, b) => a.date_from < b.date_from ? -1 : a.date_from > b.date_from ? 1 : a.date_until < b.date_until ? -1 : 1))
       setTlTitle(''); setTlFrom(''); setTlUntil(''); setShowTimelineModal(false)
+    } catch { /* silent */ }
+  }
+
+  const handleUpdateTimelineEntry = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!editingTimelineEntry || !tlTitle.trim() || !tlFrom || !tlUntil) return
+    try {
+      await updateARTTimelineEntry(editingTimelineEntry.id, { title: tlTitle.trim(), date_from: tlFrom, date_until: tlUntil })
+      setTimelineEntries(prev => prev.map(en => en.id === editingTimelineEntry.id
+        ? { ...en, title: tlTitle.trim(), date_from: tlFrom, date_until: tlUntil }
+        : en
+      ).sort((a, b) => a.date_from < b.date_from ? -1 : a.date_from > b.date_from ? 1 : a.date_until < b.date_until ? -1 : 1))
+      setTlTitle(''); setTlFrom(''); setTlUntil('')
+      setEditingTimelineEntry(null); setShowTimelineModal(false)
     } catch { /* silent */ }
   }
 
@@ -1080,14 +1095,14 @@ export default function PlanPage() {
         {/* Timeline Entry Modal */}
         {showTimelineModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 no-print p-4"
-            onClick={e => { if (e.target === e.currentTarget) setShowTimelineModal(false) }}>
+            onClick={e => { if (e.target === e.currentTarget) { setShowTimelineModal(false); setEditingTimelineEntry(null) } }}>
             <div className="bg-white rounded-xl p-6 w-full max-w-sm">
               <div className="flex items-start justify-between mb-4">
-                <h3 className="text-lg font-bold text-gray-900">Eintrag hinzufügen</h3>
-                <button type="button" onClick={() => setShowTimelineModal(false)}
+                <h3 className="text-lg font-bold text-gray-900">{editingTimelineEntry ? 'Eintrag bearbeiten' : 'Eintrag hinzufügen'}</h3>
+                <button type="button" onClick={() => { setShowTimelineModal(false); setEditingTimelineEntry(null) }}
                   className="text-gray-400 hover:text-gray-600 text-xl leading-none shrink-0">×</button>
               </div>
-              <form onSubmit={handleCreateTimelineEntry} className="space-y-3">
+              <form onSubmit={editingTimelineEntry ? handleUpdateTimelineEntry : handleCreateTimelineEntry} className="space-y-3">
                 <div>
                   <label htmlFor="tl-title" className="block text-xs font-medium text-gray-600 mb-1">Titel *</label>
                   <input id="tl-title" type="text" value={tlTitle} onChange={e => setTlTitle(e.target.value)} required
@@ -1114,9 +1129,9 @@ export default function PlanPage() {
                 <div className="flex gap-2 pt-1">
                   <button type="submit"
                     className="px-4 py-2 bg-brand-600 hover:bg-brand-700 text-white text-sm font-medium rounded-lg">
-                    Hinzufügen
+                    {editingTimelineEntry ? 'Speichern' : 'Hinzufügen'}
                   </button>
-                  <button type="button" onClick={() => setShowTimelineModal(false)}
+                  <button type="button" onClick={() => { setShowTimelineModal(false); setEditingTimelineEntry(null) }}
                     className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Abbrechen</button>
                 </div>
               </form>
@@ -1134,10 +1149,10 @@ export default function PlanPage() {
         <div className="max-w-5xl mx-auto px-4 py-6">
 
           {/* ══════ HEADER ══════════════════════════════════════════════ */}
-          <CollapsibleSection title="Der ART im Überblick" subtitle="Grundlegenden Zahlen, Daten und Fakten zum ART" defaultOpen={true} printTitle="ART-Transformationsplan AI@DZ" isFirstSection accent="dark-blue">
+          <CollapsibleSection title="Der ART im Überblick" subtitle="Grundlegenden Zahlen, Daten und Fakten zum ART" defaultOpen={true} printTitle={`AI@DZ – Transformationsplan${latestVersion ? ` (Version ${latestVersion.version_number}${isDraft ? ' Draft' : ''})` : ''}`} printSubtitle="Deckblatt" isFirstSection accent="dark-blue">
 
             {/* ── Zeile 1: Titelbox + ART-Leitung ── */}
-            <div className="grid grid-cols-2 gap-4 mb-4">
+            {!editingIntro && <div className="grid grid-cols-2 gap-4 mb-4">
               {/* Titelbox */}
               <div className="bg-white rounded-xl border border-gray-200 p-6">
                 <p className="text-sm text-gray-600 mb-1">
@@ -1171,10 +1186,10 @@ export default function PlanPage() {
                   {art.guidance_mode_reason && <p className="text-xs text-gray-500 mt-1">{art.guidance_mode_reason}</p>}
                 </div>
               </div>
-            </div>
+            </div>}
 
             {/* ── Zeile 2: Kombinierte KPI-Box ── */}
-            <div className="bg-white rounded-xl border border-gray-200 mb-4 flex items-stretch divide-x divide-gray-100">
+            {!editingIntro && <div className="bg-white rounded-xl border border-gray-200 mb-4 flex items-stretch divide-x divide-gray-100">
               {/* Links: AI-Maturität */}
               <div className="flex flex-col items-center px-8 pt-5 pb-5 shrink-0 min-w-[10rem]">
                 <p className="text-[10px] text-gray-600 uppercase tracking-wide mb-3 text-center">Aktuelle AI-Maturität</p>
@@ -1223,7 +1238,7 @@ export default function PlanPage() {
                   </div>
                 </div>
               </div>
-            </div>
+            </div>}
 
             {/* ── Business Context & Risiken ── */}
             {editingIntro ? (
@@ -2301,7 +2316,11 @@ export default function PlanPage() {
                     return (
                       <div key={entry.id} className="flex items-center gap-2 mb-1 group">
                         <div className="w-44 shrink-0 relative text-xs text-gray-700 text-right pr-3 truncate">
-                          {entry.title}
+                          {editable ? (
+                            <button type="button"
+                              onClick={() => { setEditingTimelineEntry(entry); setTlTitle(entry.title); setTlFrom(entry.date_from); setTlUntil(entry.date_until); setShowTimelineModal(true) }}
+                              className="hover:text-brand-600 hover:underline transition-colors">{entry.title}</button>
+                          ) : entry.title}
                           {editable && (
                             <button type="button" title="Löschen"
                               onClick={() => handleDeleteTimelineEntry(entry.id, entry.title)}
@@ -2334,7 +2353,7 @@ export default function PlanPage() {
                   {editable && (
                     <div className="flex items-center gap-2 mb-3 no-print">
                       <div className="w-44 shrink-0 flex justify-end pr-3">
-                        <button type="button" onClick={() => { setTlTitle(''); setTlFrom(''); setTlUntil(''); setShowTimelineModal(true) }}
+                        <button type="button" onClick={() => { setEditingTimelineEntry(null); setTlTitle(''); setTlFrom(''); setTlUntil(''); setShowTimelineModal(true) }}
                           className="text-[10px] text-brand-500 hover:text-brand-700 border border-dashed border-gray-300 hover:border-brand-400 rounded px-2 py-0.5 transition-colors">
                           + Eintrag
                         </button>
@@ -2398,9 +2417,13 @@ export default function PlanPage() {
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Zuversicht (1–5)</label>
                     <select value={editArtConfidence} onChange={e => setEditArtConfidence(e.target.value === '' ? '' : Number(e.target.value))}
-                      className="w-28 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500">
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500">
                       <option value="">(nicht gesetzt)</option>
-                      {[1,2,3,4,5].map(v => <option key={v} value={v}>{v}</option>)}
+                      <option value={1}>1 – Grosse Bedenken, dass es funktionieren wird</option>
+                      <option value={2}>2 – Diverse Aspekte zu klären, damit es funktionieren wird</option>
+                      <option value={3}>3 – Könnte funktionieren</option>
+                      <option value={4}>4 – Wird mit kleineren Einschränkungen funktionieren</option>
+                      <option value={5}>5 – Grosse Zuversicht, dass es funktionieren wird</option>
                     </select>
                   </div>
                   <div>
@@ -2423,7 +2446,7 @@ export default function PlanPage() {
                   <div>
                     <p className="text-xs font-medium text-gray-500 mb-1">Zuversicht</p>
                     {art?.art_confidence != null
-                      ? <p className="text-2xl font-bold text-brand-700">{art?.art_confidence}<span className="text-sm font-normal text-gray-400"> / 5</span></p>
+                      ? <p className="text-2xl font-bold text-brand-700">{art?.art_confidence}<span className="text-sm font-normal text-gray-400"> / 5 – {({ 1: 'Grosse Bedenken, dass es funktionieren wird', 2: 'Diverse Aspekte zu klären, damit es funktionieren wird', 3: 'Könnte funktionieren', 4: 'Wird mit kleineren Einschränkungen funktionieren', 5: 'Grosse Zuversicht, dass es funktionieren wird' } as Record<number, string>)[art.art_confidence]}</span></p>
                       : <p className="text-xs text-gray-400 italic">Noch nicht bewertet.</p>}
                   </div>
                   <div>
@@ -2796,7 +2819,7 @@ function TeamEditMode({ teamData, roles, capabilities, saving, teamTypes, initTy
               <option value={2}>2 – Offen, aber zurückhaltend</option>
               <option value={3}>3 – Probiert aktiv aus</option>
               <option value={4}>4 – Regelmässige Nutzung</option>
-              <option value={5}>5 – Treib AI-Innovation selbst voran</option>
+              <option value={5}>5 – Treibt AI-Innovation voran</option>
             </select>
           </div>
         </div>
@@ -2826,7 +2849,7 @@ const AI_ZUGANG_LABELS: Record<number, string> = {
 }
 const AI_MOTIVATION_LABELS: Record<number, string> = {
   1: 'Geringes Interesse', 2: 'Offen, aber zurückhaltend', 3: 'Probiert aktiv aus',
-  4: 'Regelmässige Nutzung', 5: 'Treib AI-Innovation selbst voran',
+  4: 'Regelmässige Nutzung', 5: 'Treibt AI-Innovation voran',
 }
 
 function AIRadarChart({ faehigkeiten, zugang, motivation }: { faehigkeiten: number; zugang: number; motivation: number }) {

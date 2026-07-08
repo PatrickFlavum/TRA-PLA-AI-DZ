@@ -1125,6 +1125,17 @@ export async function createARTTimelineEntry(
   return data as ARTTimelineEntry
 }
 
+export async function updateARTTimelineEntry(
+  id: string,
+  params: { title: string; date_from: string; date_until: string }
+): Promise<void> {
+  const { error } = await supabase
+    .from('art_timeline_entries')
+    .update(params)
+    .eq('id', id)
+  if (error) throw error
+}
+
 export async function deleteARTTimelineEntry(id: string): Promise<void> {
   const { error } = await supabase
     .from('art_timeline_entries')
