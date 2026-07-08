@@ -7,9 +7,11 @@ type Props = {
   hidePrintTitle?: boolean
   children: React.ReactNode
   accent?: 'dark-blue' | 'light-blue' | 'dark-gray'
+  printTitle?: string
+  isFirstSection?: boolean
 }
 
-export function CollapsibleSection({ title, subtitle, defaultOpen = false, hidePrintTitle = false, children, accent }: Props) {
+export function CollapsibleSection({ title, subtitle, defaultOpen = false, hidePrintTitle = false, children, accent, printTitle, isFirstSection = false }: Props) {
   const [open, setOpen] = useState(defaultOpen)
 
   const accentCls = accent === 'dark-blue' ? 'border-l-4 border-l-blue-900 pl-3'
@@ -17,8 +19,13 @@ export function CollapsibleSection({ title, subtitle, defaultOpen = false, hideP
     : accent === 'dark-gray' ? 'border-l-4 border-l-gray-500 pl-3'
     : ''
 
+  const printBorderCls = accent === 'dark-blue' ? 'border-b-4 border-blue-900'
+    : accent === 'light-blue' ? 'border-b-4 border-blue-300'
+    : accent === 'dark-gray' ? 'border-b-4 border-gray-500'
+    : 'border-b-2 border-gray-300'
+
   return (
-    <div className="mb-6 print-no-break">
+    <div className={`mb-6 ${!isFirstSection ? 'print-break-before' : ''}`}>
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
@@ -32,8 +39,9 @@ export function CollapsibleSection({ title, subtitle, defaultOpen = false, hideP
       </button>
 
       {!hidePrintTitle && (
-        <div className="hidden print:block pb-3 mb-4 border-b border-gray-200">
-          <h2 className="text-base font-bold text-gray-900">{title}</h2>
+        <div className={`hidden print:block pb-4 mb-6 ${printBorderCls}`}>
+          <h2 className="text-2xl font-bold text-gray-900">{printTitle ?? title}</h2>
+          {subtitle && <p className="text-sm text-gray-500 mt-1">{subtitle}</p>}
         </div>
       )}
 

@@ -22,7 +22,7 @@ export default function Home() {
           </Link>
         </div>
         <footer className="absolute bottom-4 text-xs text-gray-400">
-          © {new Date().getFullYear()} Flavum
+          © {new Date().getFullYear()} AI@DZ OE-Team
         </footer>
       </div>
     </>

@@ -65,6 +65,9 @@ create table if not exists arts (
   general_benefit_potential text,
   general_scaling_potential text,
   general_acceptance        text,
+  art_confidence            smallint,
+  art_confidence_reason     text,
+  art_economy_preview       text,
   current_maturity_level_id uuid,       -- FK gesetzt nach maturity_levels (siehe unten)
   created_at               timestamptz  not null default now()
 );
@@ -84,6 +87,9 @@ alter table arts add column if not exists planned_approach         text;
 alter table arts add column if not exists general_benefit_potential text;
 alter table arts add column if not exists general_scaling_potential text;
 alter table arts add column if not exists general_acceptance        text;
+alter table arts add column if not exists art_confidence            smallint;
+alter table arts add column if not exists art_confidence_reason     text;
+alter table arts add column if not exists art_economy_preview       text;
 alter table arts add column if not exists current_maturity_level_id uuid;
 
 -- cyber_criticality CHECK: idempotent via do-Block (funktioniert auch bei bestehender Spalte ohne Constraint)

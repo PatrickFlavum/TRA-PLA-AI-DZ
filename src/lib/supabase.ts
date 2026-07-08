@@ -192,7 +192,7 @@ export async function createART(
 
 export async function updateART(
   id: string,
-  params: Partial<Pick<ART, 'name' | 'description' | 'mission_statement' | 'business_context' | 'risks' | 'budget_2027' | 'guidance_mode_id' | 'art_leadership' | 'responsible_person' | 'cyber_criticality' | 'cyber_criticality_reason' | 'guidance_mode_reason' | 'current_maturity_level_id' | 'planned_approach' | 'general_benefit_potential' | 'general_scaling_potential' | 'general_acceptance'>>
+  params: Partial<Pick<ART, 'name' | 'description' | 'mission_statement' | 'business_context' | 'risks' | 'budget_2027' | 'guidance_mode_id' | 'art_leadership' | 'responsible_person' | 'cyber_criticality' | 'cyber_criticality_reason' | 'guidance_mode_reason' | 'current_maturity_level_id' | 'planned_approach' | 'general_benefit_potential' | 'general_scaling_potential' | 'general_acceptance' | 'art_confidence' | 'art_confidence_reason' | 'art_economy_preview'>>
 ): Promise<void> {
   const { error } = await supabase
     .from('arts')

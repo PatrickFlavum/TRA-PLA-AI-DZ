@@ -11,7 +11,7 @@ import {
   loadARTByToken, updateART, loadOrganization,
   loadPlanVersions, createPlanVersion, checkInVersion,
   loadTeams, createTeam, updateTeam, deleteTeam,
-  loadAllTeamMembers, createTeamMember, deleteTeamMember,
+  loadAllTeamMembers, createTeamMember, updateTeamMember, deleteTeamMember,
   loadAllTeamAllocations, saveTeamAllocations,
   loadEmployeeRoles, loadCapabilities, loadGuidanceModes,
   loadAIUseCasesForPlan, loadAllUseCaseCapabilityLinks,
@@ -219,6 +219,11 @@ export default function PlanPage() {
   const [ratingEdits, setRatingEdits] = useState<Record<string, { nutzen: number; skalierbarkeit: number; akzeptanz: number }>>({})
   const [editPlannedApproach, setEditPlannedApproach] = useState('')
   const [editingPlannedApproach, setEditingPlannedApproach] = useState(false)
+  const [editArtConfidence, setEditArtConfidence] = useState<number | ''>('')
+  const [editArtConfidenceReason, setEditArtConfidenceReason] = useState('')
+  const [editingArtConfidence, setEditingArtConfidence] = useState(false)
+  const [editArtEconomyPreview, setEditArtEconomyPreview] = useState('')
+  const [editingArtEconomyPreview, setEditingArtEconomyPreview] = useState(false)
   const [editingArtPotentials, setEditingArtPotentials] = useState(false)
   const [editBenefitPotential, setEditBenefitPotential] = useState('')
   const [editScalingPotential, setEditScalingPotential] = useState('')
@@ -439,6 +444,28 @@ export default function PlanPage() {
     setSaving(false)
   }
 
+  const handleSaveArtConfidence = async () => {
+    if (!art) return
+    setSaving(true)
+    try {
+      await updateART(art.id, { art_confidence: editArtConfidence !== '' ? editArtConfidence : null, art_confidence_reason: editArtConfidenceReason || null })
+      setArt({ ...art, art_confidence: editArtConfidence !== '' ? editArtConfidence : null, art_confidence_reason: editArtConfidenceReason || null })
+      setEditingArtConfidence(false)
+    } catch { setError('Fehler beim Speichern.') }
+    setSaving(false)
+  }
+
+  const handleSaveArtEconomyPreview = async () => {
+    if (!art) return
+    setSaving(true)
+    try {
+      await updateART(art.id, { art_economy_preview: editArtEconomyPreview || null })
+      setArt({ ...art, art_economy_preview: editArtEconomyPreview || null })
+      setEditingArtEconomyPreview(false)
+    } catch { setError('Fehler beim Speichern.') }
+    setSaving(false)
+  }
+
   const handleSaveArtPotentials = async () => {
     if (!art) return
     setSaving(true)
@@ -539,6 +566,10 @@ export default function PlanPage() {
 
   const handleDeleteMember = async (memberId: string) => {
     try { await deleteTeamMember(memberId); loadData() } catch { setError('Fehler beim Löschen.') }
+  }
+
+  const handleUpdateMember = async (memberId: string, params: Pick<TeamMember, 'role_id' | 'type' | 'category' | 'fte' | 'headcount'>) => {
+    try { await updateTeamMember(memberId, params); loadData() } catch { setError('Fehler beim Aktualisieren.') }
   }
 
   const handleCreateLocalUc = async (e: React.FormEvent) => {
@@ -811,6 +842,7 @@ export default function PlanPage() {
           if (!uc) return null
           const caps = useCaseCapLinks.filter(l => l.use_case_id === uc.id)
           const matLinks = useCaseMaturityLinks.filter(l => l.use_case_id === uc.id)
+          const ttLinks = useCaseTeamTypeLinks.filter(l => l.use_case_id === uc.id)
           const UC_STATUS_BADGE_MODAL: Partial<Record<AIUseCaseStatus, string>> = {
             'In Backlog': 'bg-gray-100 text-gray-600',
             'In Lösungsexploration': 'bg-blue-50 text-blue-700',
@@ -885,6 +917,23 @@ export default function PlanPage() {
                           return (
                             <span key={l.maturity_level_id} className="inline-block px-2 py-0.5 text-xs font-bold rounded bg-brand-100 text-brand-700">
                               {ml.code} – {ml.title}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  {ttLinks.length > 0 && (
+                    <div>
+                      <p className="text-[10px] text-gray-400 uppercase tracking-wide mb-1.5">Team-Typen</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {ttLinks.map(l => {
+                          const tt = teamTypes.find(t => t.id === l.team_type_id)
+                          if (!tt) return null
+                          return (
+                            <span key={l.team_type_id} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium text-white"
+                              style={{ backgroundColor: tt.color ?? '#6366f1' }}>
+                              {tt.name}
                             </span>
                           )
                         })}
@@ -1021,10 +1070,6 @@ export default function PlanPage() {
                     </button>
                     <button type="button" onClick={() => setShowLocalUcModal(false)}
                       className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Abbrechen</button>
-                    {isEdit && (
-                      <button type="button" onClick={() => handleDeleteLocalUc(useCases.find(u => u.id === editingLocalUcId)!)}
-                        className="ml-auto px-4 py-2 text-sm text-red-400 hover:text-red-600">Löschen</button>
-                    )}
                   </div>
                 </form>
               </div>
@@ -1089,7 +1134,7 @@ export default function PlanPage() {
         <div className="max-w-5xl mx-auto px-4 py-6">
 
           {/* ══════ HEADER ══════════════════════════════════════════════ */}
-          <CollapsibleSection title="Der ART im Überblick" subtitle="Nützliche Zahlen, Daten und Fakten zum ART" defaultOpen={true} hidePrintTitle accent="dark-blue">
+          <CollapsibleSection title="Der ART im Überblick" subtitle="Grundlegenden Zahlen, Daten und Fakten zum ART" defaultOpen={true} printTitle="ART-Transformationsplan AI@DZ" isFirstSection accent="dark-blue">
 
             {/* ── Zeile 1: Titelbox + ART-Leitung ── */}
             <div className="grid grid-cols-2 gap-4 mb-4">
@@ -1157,7 +1202,7 @@ export default function PlanPage() {
               <div className="flex-1 flex flex-col justify-start gap-5 px-8 pt-5 pb-5">
                 <div>
                   <div className="flex justify-between text-[10px] mb-1.5">
-                    <span className="uppercase tracking-wide text-gray-600">Internalisierungsrate</span>
+                    <span className="uppercase tracking-wide text-gray-600">Verteilung INT/EXT</span>
                     {internPct !== null && <span className="text-gray-600">{internPct}% intern · {externPct}% extern</span>}
                   </div>
                   <div className="h-3 rounded-full overflow-hidden flex bg-gray-300">
@@ -1168,7 +1213,7 @@ export default function PlanPage() {
                 </div>
                 <div>
                   <div className="flex justify-between text-[10px] mb-1.5">
-                    <span className="uppercase tracking-wide text-gray-600">Verteilung intern</span>
+                    <span className="uppercase tracking-wide text-gray-600">Verteilung IT / Business</span>
                     {itPct !== null && <span className="text-gray-600">{itPct}% IT · {businessPct}% Business</span>}
                   </div>
                   <div className="h-3 rounded-full overflow-hidden flex bg-gray-300">
@@ -1190,7 +1235,8 @@ export default function PlanPage() {
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
                 </div>
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
-                  <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Mission Statement / Beschreibung ART</h4>
+                  <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Mission Statement / Beschreibung ART</h4>
+                  <p className="text-[10px] text-gray-400 mb-2">1-3 Sätze zur grundsätzlichen Einordnung</p>
                   <RichTextEditor value={missionStatement} onChange={setMissionStatement} placeholder="Mission Statement / Beschreibung des ART…" />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1225,38 +1271,15 @@ export default function PlanPage() {
                     </div>
                   </div>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="bg-white rounded-xl border border-gray-200 p-5">
-                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Business Context & Roadmap</h4>
-                    <p className="text-[10px] text-gray-400 mb-2">Was kommt in den nächsten 1–5 Jahren auf diesen ART zu?</p>
-                    <RichTextEditor value={businessContext} onChange={setBusinessContext} placeholder="Business Context…" />
-                  </div>
-                  <div className="bg-white rounded-xl border border-gray-200 p-5">
-                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Risiken & Störfaktoren</h4>
-                    <p className="text-[10px] text-gray-400 mb-2">Was könnte die geplante Transformation gefährden?</p>
-                    <RichTextEditor value={risks} onChange={setRisks} placeholder="Risiken…" />
-                  </div>
+                <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Business Roadmap & Context</h4>
+                  <p className="text-[10px] text-gray-400 mb-2">Was kommt in den nächsten 1–5 Jahren auf diesen ART zu? Kurze Beschreibung der wichtigsten Effekte.</p>
+                  <RichTextEditor value={businessContext} onChange={setBusinessContext} placeholder="Business Context…" />
                 </div>
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
-                  <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Cyber-Kritikalität</h4>
-                  <div className="flex items-start gap-4">
-                    <div className="shrink-0">
-                      <label htmlFor="cyber-crit" className="block text-[10px] text-gray-400 mb-1">Einstufung</label>
-                      <select id="cyber-crit" value={cyberCriticality} onChange={e => setCyberCriticality(e.target.value as CyberCriticality | '')}
-                        className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-brand-500">
-                        <option value="">– Nicht gewählt –</option>
-                        <option value="Hoch">Hoch</option>
-                        <option value="Mittel">Mittel</option>
-                        <option value="Tief">Tief</option>
-                      </select>
-                    </div>
-                    <div className="flex-1">
-                      <label htmlFor="cyber-reason" className="block text-[10px] text-gray-400 mb-1">Begründung</label>
-                      <textarea id="cyber-reason" value={cyberCriticalityReason} onChange={e => setCyberCriticalityReason(e.target.value)} rows={3}
-                        placeholder="Begründung der Cyber-Kritikalitätseinstufung…"
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
-                    </div>
-                  </div>
+                  <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Implikationen / Störfaktoren für die AI-Transformation</h4>
+                  <p className="text-[10px] text-gray-400 mb-2">Welche äusseren Faktoren könnten die AI-Transformation in diesem ART gefährden?</p>
+                  <RichTextEditor value={risks} onChange={setRisks} placeholder="Implikationen / Störfaktoren…" />
                 </div>
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
                   <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1">Aktuelle AI-Maturität</h4>
@@ -1283,35 +1306,18 @@ export default function PlanPage() {
               <>
                 <div className="space-y-3">
                   <div className="bg-white rounded-xl border border-gray-200 p-5">
-                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Business Context & Roadmap</h4>
+                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Business Roadmap & Context</h4>
                     {art.business_context
                       ? <div className="rich-text-content text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: art.business_context }} />
                       : <p className="text-xs text-gray-400 italic">Noch nicht beschrieben.</p>}
                   </div>
                   <div className="bg-white rounded-xl border border-gray-200 p-5">
-                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Risiken & Störfaktoren</h4>
+                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Implikationen / Störfaktoren für die AI-Transformation</h4>
                     {art.risks
                       ? <div className="rich-text-content text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: art.risks }} />
                       : <p className="text-xs text-gray-400 italic">Noch nicht beschrieben.</p>}
                   </div>
                 </div>
-                {(art.cyber_criticality || art.cyber_criticality_reason) && (
-                  <div className="mt-3 bg-white rounded-xl border border-gray-200 p-5">
-                    <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Cyber-Kritikalität</h4>
-                    <div className="flex items-start gap-3">
-                      {art.cyber_criticality && (
-                        <span className={`inline-block shrink-0 px-3 py-1 rounded-full text-sm font-semibold ${
-                          art.cyber_criticality === 'Hoch' ? 'bg-red-100 text-red-700' :
-                          art.cyber_criticality === 'Mittel' ? 'bg-amber-100 text-amber-700' :
-                          'bg-green-100 text-green-700'
-                        }`}>{art.cyber_criticality}</span>
-                      )}
-                      {art.cyber_criticality_reason && (
-                        <p className="text-sm text-gray-700 whitespace-pre-wrap">{art.cyber_criticality_reason}</p>
-                      )}
-                    </div>
-                  </div>
-                )}
 
                 {editable && (
                   <button type="button" onClick={() => setEditingIntro(true)}
@@ -1324,14 +1330,14 @@ export default function PlanPage() {
           </CollapsibleSection>
 
           {/* ══════ STANDORTBESTIMMUNG ════════════════════════════════════ */}
-          <CollapsibleSection title="Standortbestimmung Transformation" subtitle="Aktueller Zustand der 10 Faktoren für eine erfolgreiche Transformation" accent="dark-blue">
+          <CollapsibleSection title="Transformationsstatus" subtitle="Aktueller Zustand der 10 Faktoren für eine erfolgreiche Transformation" accent="dark-blue">
             {(() => {
               const sbMap = new Map(standortbestimmung.map(s => [s.dimension_key, s]))
               const isEditing = editingStandortbestimmung
               const COLOR_LABEL: Record<StandortbestimmungColor, string> = {
                 gruen: 'Bereit / Auf Kurs',
                 gelb:  'Zusätzliche Massnahmen notwendig',
-                rot:   'Schwerwiegende Herausforderung',
+                rot:   'Grössere Herausforderungen',
               }
               const COLOR_BG: Record<StandortbestimmungColor, string> = {
                 gruen: 'bg-green-500', gelb: 'bg-yellow-400', rot: 'bg-red-500',
@@ -1395,7 +1401,7 @@ export default function PlanPage() {
                     <thead>
                       <tr className="text-left text-xs text-gray-600 border-b border-gray-100">
                         <th className="px-5 py-2 font-medium w-1/2">Dimension</th>
-                        <th className="px-4 py-2 font-medium w-1/2">Begründung</th>
+                        <th className="px-4 py-2 font-medium w-1/2">Kommentar</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-50">
@@ -1470,7 +1476,7 @@ export default function PlanPage() {
           </CollapsibleSection>
 
           {/* ══════ AKTUELLE TEAM-STRUKTUREN ══════════════════════════════ */}
-          <CollapsibleSection title="Diagnose Teil 1 – Teamsicht" subtitle="Teams, Rollen und Kapazitätsverteilung" accent="dark-blue">
+          <CollapsibleSection title="Diagnose Teil 1 – Teamsicht" subtitle="Teams, Rollen, Kapazitätsverteilung und AI-Readiness" accent="dark-blue">
             <div className="space-y-4">
               {teamsData.map(td => {
                 const isEditingThis = editingTeamId === td.team.id
@@ -1487,7 +1493,7 @@ export default function PlanPage() {
                       <TeamEditMode teamData={td} roles={roles} capabilities={capabilities} saving={saving}
                         teamTypes={teamTypes} initTypeIds={teamTeamTypes.filter(x => x.team_id === td.team.id).map(x => x.team_type_id)}
                         onSave={handleSaveTeam} onDeleteTeam={handleDeleteTeam}
-                        onAddMember={(m) => handleAddMember(td.team.id, m)} onDeleteMember={handleDeleteMember}
+                        onAddMember={(m) => handleAddMember(td.team.id, m)} onUpdateMember={handleUpdateMember} onDeleteMember={handleDeleteMember}
                         onAllocChange={(capId, val) => handleAllocChange(td.team.id, capId, val)} onClose={() => setEditingTeamId(null)} />
                     ) : (
                       <>
@@ -1495,18 +1501,22 @@ export default function PlanPage() {
                           <div>
                             <div className="flex items-center gap-2 flex-wrap">
                               <h4 className="text-base font-semibold text-gray-900">{td.team.name}</h4>
-                              {teamTeamTypes.filter(ttt => ttt.team_id === td.team.id).map(ttt => {
-                                const typ = teamTypes.find(x => x.id === ttt.team_type_id)
-                                if (!typ) return null
-                                return (
-                                  <span key={ttt.id} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium text-white"
-                                    style={{ backgroundColor: typ.color ?? '#6366f1' }}>
-                                    {typ.name}
-                                  </span>
-                                )
-                              })}
                             </div>
                             {td.team.description && <p className="text-xs text-gray-600 mt-0.5">{td.team.description}</p>}
+                            {teamTeamTypes.filter(ttt => ttt.team_id === td.team.id).length > 0 && (
+                              <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+                                {teamTeamTypes.filter(ttt => ttt.team_id === td.team.id).map(ttt => {
+                                  const typ = teamTypes.find(x => x.id === ttt.team_type_id)
+                                  if (!typ) return null
+                                  return (
+                                    <span key={ttt.id} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium text-white"
+                                      style={{ backgroundColor: typ.color ?? '#6366f1' }}>
+                                      {typ.name}
+                                    </span>
+                                  )
+                                })}
+                              </div>
+                            )}
                           </div>
                           <div className="flex items-center gap-2 shrink-0 ml-3">
                             {editable && (
@@ -1522,7 +1532,7 @@ export default function PlanPage() {
                         <h5 className="text-sm font-semibold text-gray-700 mt-6 mb-2">Team-Zusammenstellung</h5>
                         <SummaryTable rows={teamSummary} totals={teamTotals} />
                         {hasAnyAllocation && (
-                          <div className="mt-6"><h5 className="text-sm font-semibold text-gray-700 mb-2">Kapazitätsverteilung auf Capabilities</h5><StackedBar slices={allocSlices} /></div>
+                          <div className="mt-6"><h5 className="text-sm font-semibold text-gray-700 mb-2">Kapazitätsverteilung</h5><StackedBar slices={allocSlices} /></div>
                         )}
                         {td.team.challenges && (
                           <div className="mt-6">
@@ -1532,7 +1542,7 @@ export default function PlanPage() {
                         )}
                         {(td.team.ai_faehigkeiten != null || td.team.ai_zugang != null || td.team.ai_motivation != null || td.team.ai_selbsteinschaetzung_kommentar != null) && (
                           <div className="mt-6">
-                            <h5 className="text-sm font-semibold text-gray-700 mb-3">AI-Selbsteinschätzung</h5>
+                            <h5 className="text-sm font-semibold text-gray-700 mb-3">AI-Readiness des Teams</h5>
                             <div className="grid grid-cols-3 gap-6 items-start">
                               {/* Links: Dreieck */}
                               <div>
@@ -1660,7 +1670,59 @@ export default function PlanPage() {
 
 
           {/* ══════ USE CASE POTENTIALE ═══════════════════════════════════ */}
-          <CollapsibleSection title="Diagnose Teil 2 – Potenziale" subtitle="Use Case Bewertungen und Potenzialbeschreibungen" accent="dark-blue">
+          <CollapsibleSection title="Diagnose Teil 2 – Potenziale" subtitle="Potenzialbeschreibung, Use Case Bewertungen, Prioritäten" accent="dark-blue">
+            <div className="space-y-5">
+            {/* ── Generelle Potenzialfelder ── */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-4 no-print">
+                <h5 className="text-sm font-semibold text-gray-700">Generelle Einschätzungen gesamter ART</h5>
+                {editable && !editingArtPotentials && (
+                  <button type="button"
+                    onClick={() => {
+                      setEditBenefitPotential(art?.general_benefit_potential ?? '')
+                      setEditScalingPotential(art?.general_scaling_potential ?? '')
+                      setEditGeneralAcceptance(art?.general_acceptance ?? '')
+                      setEditingArtPotentials(true)
+                    }}
+                    className="px-3 py-1.5 border border-gray-200 text-xs text-brand-600 hover:bg-brand-50 font-medium rounded-lg no-print">
+                    Bearbeiten
+                  </button>
+                )}
+              </div>
+              <div className="space-y-5">
+                {([
+                  { label: 'Nutzenpotenzial', hint: 'Wie wird gesamtheitlich der pot. Nutzen von AI in diesem ART bewertet?', val: editingArtPotentials ? editBenefitPotential : art?.general_benefit_potential, set: setEditBenefitPotential },
+                  { label: 'Skalierungspotenzial', hint: 'Wie wird gesamtheitlich der pot. Skalierung – also Wiederverwendung von AI Use Cases – in diesem ART bewertet?', val: editingArtPotentials ? editScalingPotential : art?.general_scaling_potential, set: setEditScalingPotential },
+                  { label: 'Akzeptanz', hint: 'Wie wird generelle Akzeptanz von AI im ART bewertet?', val: editingArtPotentials ? editGeneralAcceptance : art?.general_acceptance, set: setEditGeneralAcceptance },
+                ] as { label: string; hint: string; val: string | null | undefined; set: (v: string) => void }[]).map(field => (
+                  <div key={field.label}>
+                    <p className="text-xs font-semibold text-gray-700 mb-1">{field.label}</p>
+                    {editingArtPotentials ? (
+                      <>
+                        <p className="text-[10px] text-gray-400 mb-1">{field.hint}</p>
+                        <textarea value={field.val ?? ''} onChange={e => field.set(e.target.value)} rows={3}
+                          placeholder={`${field.label}…`}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                      </>
+                    ) : field.val ? (
+                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{field.val}</p>
+                    ) : (
+                      <p className="text-xs text-gray-400 italic">Noch nicht beschrieben.</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {editingArtPotentials && (
+                <div className="flex gap-2 mt-4 no-print">
+                  <button type="button" onClick={handleSaveArtPotentials} disabled={saving}
+                    className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg">
+                    {saving ? 'Speichern…' : 'Speichern'}
+                  </button>
+                  <button type="button" onClick={() => setEditingArtPotentials(false)}
+                    className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Abbrechen</button>
+                </div>
+              )}
+            </div>
             {(() => {
               type UcRankRow = {
                 uc: AIUseCase
@@ -1669,12 +1731,14 @@ export default function PlanPage() {
                 hasRating: boolean
               }
               const rows: UcRankRow[] = useCases.map(uc => {
-                const notNeededTeamIds = artUseCases.filter(u => u.use_case_id === uc.id && u.status === 'no_deployment').map(u => u.team_id)
                 const ucCapIds = useCaseCapLinks.filter(l => l.use_case_id === uc.id).map(l => l.capability_id)
+                const ucTeamTypeIds = useCaseTeamTypeLinks.filter(l => l.use_case_id === uc.id).map(l => l.team_type_id)
                 const eligibleTeams = teamsData.filter(td => {
-                  if (notNeededTeamIds.includes(td.team.id)) return false
-                  if (ucCapIds.length === 0) return true
-                  return ucCapIds.some(capId => (td.allocations[capId] ?? 0) > 0)
+                  if (ucCapIds.length === 0 && ucTeamTypeIds.length === 0) return true
+                  const capFits = ucCapIds.some(capId => (td.allocations[capId] ?? 0) > 0)
+                  const tdTypeIds = teamTeamTypes.filter(ttt => ttt.team_id === td.team.id).map(ttt => ttt.team_type_id)
+                  const typeFits = ucTeamTypeIds.some(ttId => tdTypeIds.includes(ttId))
+                  return capFits || typeFits
                 })
                 const anzahlHC = eligibleTeams.reduce((s, td) => s + td.members.reduce((ms, m) => ms + m.headcount, 0), 0)
                 const rating = artUseCaseRatings.find(r => r.use_case_id === uc.id)
@@ -1786,16 +1850,6 @@ export default function PlanPage() {
                                   {row.uc.type === 'local' && (
                                     <span className="text-[9px] px-1.5 py-0.5 bg-orange-50 text-orange-600 rounded-full font-medium whitespace-nowrap">lokal</span>
                                   )}
-                                  {useCaseTeamTypeLinks.filter(l => l.use_case_id === row.uc.id).map(l => {
-                                    const tt = teamTypes.find(t => t.id === l.team_type_id)
-                                    if (!tt) return null
-                                    return (
-                                      <span key={l.team_type_id} className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-medium text-white whitespace-nowrap"
-                                        style={{ backgroundColor: tt.color ?? '#6366f1' }}>
-                                        {tt.name}
-                                      </span>
-                                    )
-                                  })}
                                 </div>
                               </td>
                               <td className="py-2 pr-3">
@@ -1839,62 +1893,11 @@ export default function PlanPage() {
                 </div>
               )
             })()}
-
-            {/* ── Generelle Potenzialfelder ── */}
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <div className="flex items-center justify-between mb-4 no-print">
-                <h5 className="text-sm font-semibold text-gray-700">Generelle Einschätzungen gesamter ART</h5>
-                {editable && !editingArtPotentials && (
-                  <button type="button"
-                    onClick={() => {
-                      setEditBenefitPotential(art?.general_benefit_potential ?? '')
-                      setEditScalingPotential(art?.general_scaling_potential ?? '')
-                      setEditGeneralAcceptance(art?.general_acceptance ?? '')
-                      setEditingArtPotentials(true)
-                    }}
-                    className="px-3 py-1.5 border border-gray-200 text-xs text-brand-600 hover:bg-brand-50 font-medium rounded-lg no-print">
-                    Bearbeiten
-                  </button>
-                )}
-              </div>
-              <div className="space-y-5">
-                {([
-                  { label: 'Nutzenpotenzial', hint: 'Wie wird gesamtheitlich der pot. Nutzen von AI in diesem ART bewertet?', val: editingArtPotentials ? editBenefitPotential : art?.general_benefit_potential, set: setEditBenefitPotential },
-                  { label: 'Skalierungspotenzial', hint: 'Wie wird gesamtheitlich der pot. Skalierung – also Wiederverwendung von AI Use Cases – in diesem ART bewertet?', val: editingArtPotentials ? editScalingPotential : art?.general_scaling_potential, set: setEditScalingPotential },
-                  { label: 'Akzeptanz', hint: 'Wie wird generelle Akzeptanz von AI im ART bewertet?', val: editingArtPotentials ? editGeneralAcceptance : art?.general_acceptance, set: setEditGeneralAcceptance },
-                ] as { label: string; hint: string; val: string | null | undefined; set: (v: string) => void }[]).map(field => (
-                  <div key={field.label}>
-                    <p className="text-xs font-semibold text-gray-700 mb-1">{field.label}</p>
-                    {editingArtPotentials ? (
-                      <>
-                        <p className="text-[10px] text-gray-400 mb-1">{field.hint}</p>
-                        <textarea value={field.val ?? ''} onChange={e => field.set(e.target.value)} rows={3}
-                          placeholder={`${field.label}…`}
-                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
-                      </>
-                    ) : field.val ? (
-                      <p className="text-sm text-gray-700 whitespace-pre-wrap">{field.val}</p>
-                    ) : (
-                      <p className="text-xs text-gray-400 italic">Noch nicht beschrieben.</p>
-                    )}
-                  </div>
-                ))}
-              </div>
-              {editingArtPotentials && (
-                <div className="flex gap-2 mt-4 no-print">
-                  <button type="button" onClick={handleSaveArtPotentials} disabled={saving}
-                    className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg">
-                    {saving ? 'Speichern…' : 'Speichern'}
-                  </button>
-                  <button type="button" onClick={() => setEditingArtPotentials(false)}
-                    className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Abbrechen</button>
-                </div>
-              )}
             </div>
           </CollapsibleSection>
 
           {/* ══════ USE CASE PLANUNG ══════════════════════════════════════ */}
-          <CollapsibleSection title="Planung Teil 1 – Use Case Erprobung & Nutzung" subtitle="Geplante Verwendungen von AI Use Cases pro Team" accent="dark-blue">
+          <CollapsibleSection title="Planung Teil 1 – Use Case Verwendung" subtitle="Geplante Verwendungen von AI Use Cases pro Team" accent="dark-blue">
             <div className="space-y-4">
               {(() => {
                 const notAdded = availableUseCases
@@ -2073,7 +2076,7 @@ export default function PlanPage() {
           </CollapsibleSection>
 
           {/* ══════ ROADMAP ═══════════════════════════════════════════════ */}
-          <CollapsibleSection title="Planung Teil 2 – Roadmap" subtitle="Zeitplan mit Meilensteinen und Übersicht über die Erprobung, Einführung und Nutzung der Use Cases" accent="dark-blue">
+          <CollapsibleSection title="Planung Teil 2 – Roadmap & Confidence" subtitle="Zeitplan mit Meilensteinen und Übersicht über die Erprobung, Einführung und Nutzung der Use Cases" accent="dark-blue">
             <div className="space-y-5">
 
             {/* ── Geplantes Vorgehen ── */}
@@ -2235,6 +2238,7 @@ export default function PlanPage() {
 
               return (
                 <div className="bg-white rounded-xl border border-gray-200 p-5">
+                  <h5 className="text-sm font-semibold text-gray-700 mb-4">Überblick Roadmap</h5>
                   <div className="flex flex-wrap gap-5 mb-4 text-xs text-gray-600">
                     <div className="flex items-center gap-1.5"><span className="text-gray-800 text-sm leading-none select-none">◆</span><span>Meilenstein</span></div>
                     <div className="flex items-center gap-1.5"><div className="w-4 h-3 rounded-sm bg-gray-600" /><span>Übergeordnete Phase</span></div>
@@ -2377,6 +2381,94 @@ export default function PlanPage() {
               )
             })()}
 
+            {/* ── Zuversicht der ART-Leitung ── */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-4 no-print">
+                <h5 className="text-sm font-semibold text-gray-700">Zuversicht der ART-Leitung</h5>
+                {editable && !editingArtConfidence && (
+                  <button type="button"
+                    onClick={() => { setEditArtConfidence(art?.art_confidence ?? ''); setEditArtConfidenceReason(art?.art_confidence_reason ?? ''); setEditingArtConfidence(true) }}
+                    className="px-3 py-1.5 border border-gray-200 text-xs text-brand-600 hover:bg-brand-50 font-medium rounded-lg no-print">
+                    Bearbeiten
+                  </button>
+                )}
+              </div>
+              {editingArtConfidence ? (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Zuversicht (1–5)</label>
+                    <select value={editArtConfidence} onChange={e => setEditArtConfidence(e.target.value === '' ? '' : Number(e.target.value))}
+                      className="w-28 px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500">
+                      <option value="">(nicht gesetzt)</option>
+                      {[1,2,3,4,5].map(v => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Begründung / Offene Punkte</label>
+                    <textarea value={editArtConfidenceReason} onChange={e => setEditArtConfidenceReason(e.target.value)} rows={4}
+                      placeholder="Begründung oder offene Punkte…"
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                  </div>
+                  <div className="flex gap-2 no-print">
+                    <button type="button" onClick={handleSaveArtConfidence} disabled={saving}
+                      className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg">
+                      {saving ? 'Speichern…' : 'Speichern'}
+                    </button>
+                    <button type="button" onClick={() => setEditingArtConfidence(false)}
+                      className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Abbrechen</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 mb-1">Zuversicht</p>
+                    {art?.art_confidence != null
+                      ? <p className="text-2xl font-bold text-brand-700">{art?.art_confidence}<span className="text-sm font-normal text-gray-400"> / 5</span></p>
+                      : <p className="text-xs text-gray-400 italic">Noch nicht bewertet.</p>}
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-500 mb-1">Begründung / Offene Punkte</p>
+                    {art?.art_confidence_reason
+                      ? <p className="text-sm text-gray-700 whitespace-pre-wrap">{art?.art_confidence_reason}</p>
+                      : <p className="text-xs text-gray-400 italic">Noch nicht beschrieben.</p>}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* ── Ökonomie-Vorschau ── */}
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center justify-between mb-4 no-print">
+                <h5 className="text-sm font-semibold text-gray-700">Ökonomie-Vorschau (qualitativ)</h5>
+                {editable && !editingArtEconomyPreview && (
+                  <button type="button"
+                    onClick={() => { setEditArtEconomyPreview(art?.art_economy_preview ?? ''); setEditingArtEconomyPreview(true) }}
+                    className="px-3 py-1.5 border border-gray-200 text-xs text-brand-600 hover:bg-brand-50 font-medium rounded-lg no-print">
+                    Bearbeiten
+                  </button>
+                )}
+              </div>
+              {editingArtEconomyPreview ? (
+                <>
+                  <p className="text-[10px] text-gray-400 mb-2">Qualitative Einschätzung zu wirtschaftlichen Auswirkungen (Effizienzgewinne, Kostenreduktion, Umsatzpotenzial etc.)</p>
+                  <textarea value={editArtEconomyPreview} onChange={e => setEditArtEconomyPreview(e.target.value)} rows={5}
+                    placeholder="Ökonomische Vorschau…"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500" />
+                  <div className="flex gap-2 mt-3 no-print">
+                    <button type="button" onClick={handleSaveArtEconomyPreview} disabled={saving}
+                      className="px-4 py-2 bg-brand-600 hover:bg-brand-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg">
+                      {saving ? 'Speichern…' : 'Speichern'}
+                    </button>
+                    <button type="button" onClick={() => setEditingArtEconomyPreview(false)}
+                      className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900">Abbrechen</button>
+                  </div>
+                </>
+              ) : art?.art_economy_preview ? (
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">{art?.art_economy_preview}</p>
+              ) : (
+                <p className="text-xs text-gray-400 italic">Noch nicht beschrieben.</p>
+              )}
+            </div>
             </div>
           </CollapsibleSection>
 
@@ -2606,10 +2698,11 @@ type TeamEditModeProps = {
   onSave: (teamId: string, name: string, desc: string | null, challenges: string | null, typeIds: string[], aiSelbst: { faehigkeiten: number | null; zugang: number | null; motivation: number | null; kommentar: string | null }) => void
   onDeleteTeam: (id: string, name: string) => void
   onAddMember: (m: Pick<TeamMember, 'role_id' | 'type' | 'category' | 'fte' | 'headcount'>) => void
+  onUpdateMember: (id: string, params: Pick<TeamMember, 'role_id' | 'type' | 'category' | 'fte' | 'headcount'>) => void
   onDeleteMember: (id: string) => void; onAllocChange: (capId: string, val: number) => void; onClose: () => void
 }
 
-function TeamEditMode({ teamData, roles, capabilities, saving, teamTypes, initTypeIds, onSave, onDeleteTeam, onAddMember, onDeleteMember, onAllocChange, onClose }: TeamEditModeProps) {
+function TeamEditMode({ teamData, roles, capabilities, saving, teamTypes, initTypeIds, onSave, onDeleteTeam, onAddMember, onUpdateMember, onDeleteMember, onAllocChange, onClose }: TeamEditModeProps) {
   const { team, members, allocations } = teamData
   const [editName, setEditName] = useState(team.name)
   const [editDesc, setEditDesc] = useState(team.description ?? '')
@@ -2630,9 +2723,9 @@ function TeamEditMode({ teamData, roles, capabilities, saving, teamTypes, initTy
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <h4 className="text-base font-semibold text-gray-900">Team bearbeiten</h4>
-        <button type="button" onClick={() => onDeleteTeam(team.id, team.name)} className="px-3 py-1.5 text-xs text-red-500 hover:text-red-700 border border-red-200 rounded-lg">Team löschen</button>
+      <div className="flex items-start justify-between mb-4">
+        <h4 className="text-base font-semibold text-gray-900">{team.name}</h4>
+        <button type="button" onClick={() => onDeleteTeam(team.id, team.name)} className="px-3 py-1.5 text-xs text-red-500 hover:text-red-700 border border-red-200 rounded-lg shrink-0 ml-3">Team löschen</button>
       </div>
       <div className="grid grid-cols-2 gap-3 mb-4">
         <div><label htmlFor={`tn-${team.id}`} className="block text-xs font-medium text-gray-600 mb-1">Name</label>
@@ -2652,7 +2745,6 @@ function TeamEditMode({ teamData, roles, capabilities, saving, teamTypes, initTy
                 <button key={tt.id} type="button" onClick={() => toggleType(tt.id)}
                   className={`inline-flex items-center px-3 py-1 rounded text-xs font-medium border transition-all ${checked ? 'text-white border-transparent' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-400'}`}
                   style={checked ? { backgroundColor: tt.color ?? '#6366f1', borderColor: tt.color ?? '#6366f1' } : {}}>
-                  {!checked && <span className="w-2.5 h-2.5 rounded-full mr-1.5 shrink-0" style={{ backgroundColor: tt.color ?? '#6366f1' }} />}
                   {tt.name}
                 </button>
               )
@@ -2660,16 +2752,16 @@ function TeamEditMode({ teamData, roles, capabilities, saving, teamTypes, initTy
           </div>
         </div>
       )}
-      <h5 className="text-xs font-semibold text-gray-600 mb-2">Mitarbeitende</h5>
-      <TeamMemberTable members={members} roles={roles} onAdd={onAddMember} onDelete={onDeleteMember} />
+      <h5 className="text-sm font-semibold text-gray-700 mb-2">Mitarbeitende</h5>
+      <TeamMemberTable members={members} roles={roles} onAdd={onAddMember} onUpdate={onUpdateMember} onDelete={onDeleteMember} />
       {capabilities.length > 0 && <div className="mt-6"><CapabilitySliders capabilities={capabilities} allocations={allocations} onChange={onAllocChange} /></div>}
       <div className="mt-5">
-        <label htmlFor={`tc-${team.id}`} className="block text-xs font-medium text-gray-600 mb-1">Aktuelle Herausforderungen/Chancen im Workflow dieses Teams</label>
+        <label htmlFor={`tc-${team.id}`} className="block text-sm font-semibold text-gray-700 mb-1">Aktuelle Herausforderungen/Chancen im Workflow dieses Teams</label>
         <textarea id={`tc-${team.id}`} value={editChallenges} onChange={e => setEditChallenges(e.target.value)} rows={3} placeholder="Optional"
           className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-brand-500 resize-y" />
       </div>
       <div className="mt-6 pt-5 border-t border-gray-100">
-        <h5 className="text-sm font-semibold text-gray-700 mb-3">AI-Selbsteinschätzung</h5>
+        <h5 className="text-sm font-semibold text-gray-700 mb-3">AI-Readiness des Teams</h5>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">AI-Fähigkeiten</label>
@@ -2700,7 +2792,7 @@ function TeamEditMode({ teamData, roles, capabilities, saving, teamTypes, initTy
             <p className="text-[10px] text-gray-400 mb-1.5">Wollen wir als Team AI überhaupt nutzen?</p>
             <select value={editAiMotivation} onChange={e => setEditAiMotivation(e.target.value === '' ? '' : Number(e.target.value))} className={selectCls}>
               <option value="">(nicht gesetzt)</option>
-              <option value={1}>1 – Geringeres Interesse</option>
+              <option value={1}>1 – Geringes Interesse</option>
               <option value={2}>2 – Offen, aber zurückhaltend</option>
               <option value={3}>3 – Probiert aktiv aus</option>
               <option value={4}>4 – Regelmässige Nutzung</option>
@@ -2733,7 +2825,7 @@ const AI_ZUGANG_LABELS: Record<number, string> = {
   4: 'Nutzung in Arbeitsprozess integriert', 5: 'Nutzung in Arbeitsprozess fest verankert',
 }
 const AI_MOTIVATION_LABELS: Record<number, string> = {
-  1: 'Geringeres Interesse', 2: 'Offen, aber zurückhaltend', 3: 'Probiert aktiv aus',
+  1: 'Geringes Interesse', 2: 'Offen, aber zurückhaltend', 3: 'Probiert aktiv aus',
   4: 'Regelmässige Nutzung', 5: 'Treib AI-Innovation selbst voran',
 }
 

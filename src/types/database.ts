@@ -37,6 +37,9 @@ export type ART = {
   general_benefit_potential: string | null
   general_scaling_potential: string | null
   general_acceptance: string | null
+  art_confidence: number | null
+  art_confidence_reason: string | null
+  art_economy_preview: string | null
   created_at: string
 }
 
