@@ -1517,30 +1517,37 @@ export default function PlanPage() {
                             <p className="text-sm text-gray-700 whitespace-pre-wrap">{td.team.challenges}</p>
                           </div>
                         )}
-                        {(td.team.ai_faehigkeiten != null || td.team.ai_zugang != null || td.team.ai_motivation != null) && (
+                        {(td.team.ai_faehigkeiten != null || td.team.ai_zugang != null || td.team.ai_motivation != null || td.team.ai_selbsteinschaetzung_kommentar != null) && (
                           <div className="mt-6">
                             <h5 className="text-sm font-semibold text-gray-700 mb-3">AI-Selbsteinschätzung</h5>
-                            {td.team.ai_faehigkeiten != null && td.team.ai_zugang != null && td.team.ai_motivation != null ? (
-                              <div className="flex flex-col sm:flex-row gap-6 items-start">
-                                <div className="text-xs text-gray-600 space-y-1.5 shrink-0 sm:w-44">
-                                  <div><span className="font-medium text-gray-700">AI-Fähigkeiten</span> <span className="text-gray-400 ml-1">Stufe {td.team.ai_faehigkeiten}</span><br /><span className="text-gray-500">{AI_FAEHIGKEITEN_LABELS[td.team.ai_faehigkeiten]}</span></div>
-                                  <div><span className="font-medium text-gray-700">AI-Zugang</span> <span className="text-gray-400 ml-1">Stufe {td.team.ai_zugang}</span><br /><span className="text-gray-500">{AI_ZUGANG_LABELS[td.team.ai_zugang]}</span></div>
-                                  <div><span className="font-medium text-gray-700">AI-Motivation</span> <span className="text-gray-400 ml-1">Stufe {td.team.ai_motivation}</span><br /><span className="text-gray-500">{AI_MOTIVATION_LABELS[td.team.ai_motivation]}</span></div>
+                            <div className="grid grid-cols-3 gap-6 items-start">
+                              {/* Links: Dreieck */}
+                              <div>
+                                {td.team.ai_faehigkeiten != null && td.team.ai_zugang != null && td.team.ai_motivation != null
+                                  ? <AIRadarChart faehigkeiten={td.team.ai_faehigkeiten} zugang={td.team.ai_zugang} motivation={td.team.ai_motivation} />
+                                  : <p className="text-xs text-gray-300 italic">Alle drei Felder ausfüllen für die Grafik.</p>}
+                              </div>
+                              {/* Mitte: drei Felder mit Trennlinien */}
+                              <div className="divide-y divide-gray-100">
+                                <div className="pb-3">
+                                  <p className="text-xs font-medium text-gray-700">AI-Fähigkeiten {td.team.ai_faehigkeiten != null && <span className="text-gray-400 font-normal">· Stufe {td.team.ai_faehigkeiten}</span>}</p>
+                                  <p className="text-xs text-gray-500 mt-0.5">{td.team.ai_faehigkeiten != null ? AI_FAEHIGKEITEN_LABELS[td.team.ai_faehigkeiten] : <span className="text-gray-300 italic">–</span>}</p>
                                 </div>
-                                <div className="flex-1 max-w-md">
-                                  <AIRadarChart faehigkeiten={td.team.ai_faehigkeiten} zugang={td.team.ai_zugang} motivation={td.team.ai_motivation} />
+                                <div className="py-3">
+                                  <p className="text-xs font-medium text-gray-700">AI-Zugang {td.team.ai_zugang != null && <span className="text-gray-400 font-normal">· Stufe {td.team.ai_zugang}</span>}</p>
+                                  <p className="text-xs text-gray-500 mt-0.5">{td.team.ai_zugang != null ? AI_ZUGANG_LABELS[td.team.ai_zugang] : <span className="text-gray-300 italic">–</span>}</p>
+                                </div>
+                                <div className="pt-3">
+                                  <p className="text-xs font-medium text-gray-700">AI-Motivation {td.team.ai_motivation != null && <span className="text-gray-400 font-normal">· Stufe {td.team.ai_motivation}</span>}</p>
+                                  <p className="text-xs text-gray-500 mt-0.5">{td.team.ai_motivation != null ? AI_MOTIVATION_LABELS[td.team.ai_motivation] : <span className="text-gray-300 italic">–</span>}</p>
                                 </div>
                               </div>
-                            ) : (
-                              <div className="text-sm space-y-1">
-                                {td.team.ai_faehigkeiten != null && <p><span className="font-medium text-gray-600">AI-Fähigkeiten:</span> Stufe {td.team.ai_faehigkeiten} – {AI_FAEHIGKEITEN_LABELS[td.team.ai_faehigkeiten]}</p>}
-                                {td.team.ai_zugang != null && <p><span className="font-medium text-gray-600">AI-Zugang:</span> Stufe {td.team.ai_zugang} – {AI_ZUGANG_LABELS[td.team.ai_zugang]}</p>}
-                                {td.team.ai_motivation != null && <p><span className="font-medium text-gray-600">AI-Motivation:</span> Stufe {td.team.ai_motivation} – {AI_MOTIVATION_LABELS[td.team.ai_motivation]}</p>}
+                              {/* Rechts: Kommentar (immer mit Titel) */}
+                              <div>
+                                <p className="text-xs font-medium text-gray-700 mb-1">Kommentar zur Selbsteinschätzung</p>
+                                <p className="text-xs text-gray-600 whitespace-pre-wrap leading-relaxed">{td.team.ai_selbsteinschaetzung_kommentar || <span className="text-gray-300 italic">–</span>}</p>
                               </div>
-                            )}
-                            {td.team.ai_selbsteinschaetzung_kommentar && (
-                              <p className="text-sm text-gray-600 mt-3 whitespace-pre-wrap">{td.team.ai_selbsteinschaetzung_kommentar}</p>
-                            )}
+                            </div>
                           </div>
                         )}
                         {/* Geplante AI Use Cases – ausgeblendet, ggf. später wieder aktivieren
@@ -2668,7 +2675,7 @@ const AI_MOTIVATION_LABELS: Record<number, string> = {
 }
 
 function AIRadarChart({ faehigkeiten, zugang, motivation }: { faehigkeiten: number; zugang: number; motivation: number }) {
-  const cx = 140, cy = 100, maxR = 72, levels = 5
+  const cx = 150, cy = 105, maxR = 72, levels = 5
   // angles: top (AI-Fähigkeiten), bottom-right (AI-Zugang), bottom-left (AI-Motivation)
   const angles = [-Math.PI / 2, Math.PI / 6, (5 * Math.PI) / 6]
   const values = [faehigkeiten, zugang, motivation]
@@ -2684,14 +2691,15 @@ function AIRadarChart({ faehigkeiten, zugang, motivation }: { faehigkeiten: numb
   const dataPolygon = angles.map((a, i) => pt(a, values[i]).join(',')).join(' ')
   const axisEnds = angles.map(a => pt(a, levels))
 
+  // Labels well outside max-radius to never overlap value numbers
   const labelProps = [
-    { x: axisEnds[0][0], y: axisEnds[0][1] - 11, anchor: 'middle' as const, label: 'AI-Fähigkeiten' },
-    { x: axisEnds[1][0] + 8, y: axisEnds[1][1], anchor: 'start' as const, label: 'AI-Zugang' },
-    { x: axisEnds[2][0] - 8, y: axisEnds[2][1], anchor: 'end' as const, label: 'AI-Motivation' },
+    { x: axisEnds[0][0], y: axisEnds[0][1] - 20, anchor: 'middle' as const, label: 'AI-Fähigkeiten' },
+    { x: axisEnds[1][0] + 18, y: axisEnds[1][1], anchor: 'start' as const, label: 'AI-Zugang' },
+    { x: axisEnds[2][0] - 18, y: axisEnds[2][1], anchor: 'end' as const, label: 'AI-Motivation' },
   ]
 
   return (
-    <svg viewBox="0 0 280 195" className="w-full" aria-hidden="true">
+    <svg viewBox="0 0 300 210" className="w-full" aria-hidden="true">
       {gridPolygons.map((pts, i) => (
         <polygon key={i} points={pts} fill={i === levels - 1 ? '#f8fafc' : 'none'} stroke="#e2e8f0" strokeWidth={i === levels - 1 ? 1 : 0.6} />
       ))}
@@ -2699,7 +2707,7 @@ function AIRadarChart({ faehigkeiten, zugang, motivation }: { faehigkeiten: numb
         const [ax, ay] = axisEnds[i]
         return <line key={i} x1={cx} y1={cy} x2={ax} y2={ay} stroke="#cbd5e1" strokeWidth={0.75} />
       })}
-      {/* level numbers along right axis */}
+      {/* level ticks along right axis */}
       {Array.from({ length: levels }, (_, i) => {
         const [lx, ly] = pt(angles[1], i + 1)
         return <text key={i} x={lx + 3} y={ly} dominantBaseline="middle" fontSize={5.5} fill="#94a3b8">{i + 1}</text>
@@ -2709,12 +2717,12 @@ function AIRadarChart({ faehigkeiten, zugang, motivation }: { faehigkeiten: numb
         const [px, py] = pt(a, values[i])
         return <circle key={i} cx={px} cy={py} r={4} fill="#4f46e5" />
       })}
-      {/* value labels near data dots */}
+      {/* value labels: nudged toward center so they never touch axis labels */}
       {angles.map((a, i) => {
         const [px, py] = pt(a, values[i])
-        const dx = i === 0 ? 0 : i === 1 ? 10 : -10
-        const dy = i === 0 ? -8 : 1
-        const anchor = i === 0 ? 'middle' : i === 1 ? 'start' : 'end'
+        const dx = i === 0 ? 0 : i === 1 ? -12 : 12
+        const dy = i === 0 ? 12 : 0
+        const anchor = i === 0 ? 'middle' : i === 1 ? 'end' : 'start'
         return <text key={i} x={px + dx} y={py + dy} textAnchor={anchor} dominantBaseline="middle" fontSize={10} fill="#3730a3" fontWeight="700">{values[i]}</text>
       })}
       {labelProps.map((lp, i) => (
