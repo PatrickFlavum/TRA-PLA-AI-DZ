@@ -254,11 +254,11 @@ export default function AODetailPage() {
                     <p className="font-medium text-gray-700 mb-1">Bearbeitungslink (Edit)</p>
                     <div className="flex items-center gap-2">
                       <code className="text-[10px] text-gray-500 break-all flex-1">
-                        {baseUrl}/plan?token={art.edit_token}
+                        {baseUrl}/plan/?token={art.edit_token}
                       </code>
                       <button
                         type="button"
-                        onClick={() => copyToClipboard(`${baseUrl}/plan?token=${art.edit_token}`)}
+                        onClick={() => copyToClipboard(`${baseUrl}/plan/?token=${art.edit_token}`)}
                         className="text-brand-600 hover:text-brand-700 shrink-0"
                       >
                         Kopieren
@@ -269,11 +269,11 @@ export default function AODetailPage() {
                     <p className="font-medium text-gray-700 mb-1">Leselink (Read-only)</p>
                     <div className="flex items-center gap-2">
                       <code className="text-[10px] text-gray-500 break-all flex-1">
-                        {baseUrl}/plan?token={art.readonly_token}
+                        {baseUrl}/plan/?token={art.readonly_token}
                       </code>
                       <button
                         type="button"
-                        onClick={() => copyToClipboard(`${baseUrl}/plan?token=${art.readonly_token}`)}
+                        onClick={() => copyToClipboard(`${baseUrl}/plan/?token=${art.readonly_token}`)}
                         className="text-brand-600 hover:text-brand-700 shrink-0"
                       >
                         Kopieren

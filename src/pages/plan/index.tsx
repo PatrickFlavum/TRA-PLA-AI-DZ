@@ -1242,7 +1242,7 @@ export default function PlanPage() {
                 </span>
                 <span className="text-xs text-amber-600 italic shrink-0">Nur-Ansicht</span>
               </div>
-              <a href={`/plan?token=${token}`}
+              <a href={`/plan/?token=${token}`}
                 className="text-xs text-brand-600 hover:text-brand-800 font-medium whitespace-nowrap shrink-0">
                 ← Zur aktuellen Version
               </a>
@@ -1253,7 +1253,7 @@ export default function PlanPage() {
         <div className="max-w-5xl mx-auto px-4 py-6">
 
           {/* ══════ HEADER ══════════════════════════════════════════════ */}
-          <CollapsibleSection title="Der ART im Überblick" subtitle="Grundlegenden Zahlen, Daten und Fakten zum ART" defaultOpen={true} printTitle={`AI@DZ – Transformationsplan${latestVersion ? ` (Version ${latestVersion.version_number}${isDraft ? ' Draft' : ''})` : ''}`} printSubtitle="Deckblatt" isFirstSection accent="dark-blue">
+          <CollapsibleSection title="Der ART im Überblick" subtitle="Grundlegenden Zahlen, Daten und Fakten zum ART" defaultOpen={true} printTitle={`AI@DZ – Transformationsplan${(viewingVersion ?? latestVersion) ? ` (Version ${(viewingVersion ?? latestVersion)!.version_number}${!viewingVersion && isDraft ? ' Draft' : ''})` : ''}`} printSubtitle="Deckblatt" isFirstSection accent="dark-blue">
 
             {/* ── Zeile 1: Titelbox + ART-Leitung ── */}
             {!editingIntro && <div className="grid grid-cols-2 gap-4 mb-4">
@@ -2792,7 +2792,7 @@ export default function PlanPage() {
                       <tr key={v.id} className="border-b border-gray-50">
                         <td className="py-2 font-medium">
                           {v.snapshot ? (
-                            <a href={`/plan?token=${token}&v=${v.version_number}`} target="_blank" rel="noopener noreferrer"
+                            <a href={`/plan/?token=${token}&v=${v.version_number}`} target="_blank" rel="noopener noreferrer"
                               className="text-brand-600 hover:text-brand-700 hover:underline">
                               v{v.version_number}
                             </a>
