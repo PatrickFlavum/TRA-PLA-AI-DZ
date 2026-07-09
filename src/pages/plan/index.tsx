@@ -2444,9 +2444,11 @@ export default function PlanPage() {
                           ))}
                           {isMilestone ? (() => {
                             const pct = toPct(fromDate)
+                            const dateLabel = fromDate.toLocaleDateString('de-CH', { day: '2-digit', month: '2-digit', year: '2-digit' })
                             return pct !== null ? (
-                              <div className="absolute" style={{ left: `${pct}%`, top: '50%', transform: 'translate(-50%, -50%)' }}>
+                              <div className="absolute flex items-center gap-0.5" style={{ left: `${pct}%`, top: '50%', transform: 'translate(-50%, -50%)' }}>
                                 <span className="text-gray-900 text-base leading-none select-none">◆</span>
+                                <span className="text-[9px] text-gray-500 whitespace-nowrap leading-none">{dateLabel}</span>
                               </div>
                             ) : null
                           })() : (() => {
@@ -2906,7 +2908,7 @@ function TeamEditMode({ teamData, roles, capabilities, saving, teamTypes, initTy
               <option value={2}>2 – Grundverständnis</option>
               <option value={3}>3 – Erste Kompetenzen</option>
               <option value={4}>4 – Gute Kompetenzen</option>
-              <option value={5}>5 – Hohe Kompetenzen</option>
+              <option value={5}>5 – Hohe Expertise</option>
             </select>
           </div>
           <div>
@@ -2915,22 +2917,22 @@ function TeamEditMode({ teamData, roles, capabilities, saving, teamTypes, initTy
             <select value={editAiZugang} onChange={e => setEditAiZugang(e.target.value === '' ? '' : Number(e.target.value))} className={selectCls}>
               <option value="">(nicht gesetzt)</option>
               <option value={1}>1 – Keine Unterstützung</option>
-              <option value={2}>2 – Erste Zugänge</option>
-              <option value={3}>3 – Nutzung möglich</option>
-              <option value={4}>4 – Nutzung in Arbeitsprozess integriert</option>
-              <option value={5}>5 – Nutzung in Arbeitsprozess fest verankert</option>
+              <option value={2}>2 – Testzugang</option>
+              <option value={3}>3 – Erste Nutzungen</option>
+              <option value={4}>4 – Breite Nutzungsmöglichkeiten</option>
+              <option value={5}>5 – In Arbeitsprozess fest integriert</option>
             </select>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">AI-Motivation</label>
-            <p className="text-[10px] text-gray-400 mb-1.5">Wollen wir als Team AI überhaupt nutzen?</p>
+            <p className="text-[10px] text-gray-400 mb-1.5">Wie motiviert sind wir, AI zu nutzen?</p>
             <select value={editAiMotivation} onChange={e => setEditAiMotivation(e.target.value === '' ? '' : Number(e.target.value))} className={selectCls}>
               <option value="">(nicht gesetzt)</option>
               <option value={1}>1 – Geringes Interesse</option>
               <option value={2}>2 – Offen, aber zurückhaltend</option>
-              <option value={3}>3 – Probiert aktiv aus</option>
-              <option value={4}>4 – Regelmässige Nutzung</option>
-              <option value={5}>5 – Treibt AI-Innovation voran</option>
+              <option value={3}>3 – Ausprobieren</option>
+              <option value={4}>4 – Aktiv nutzen</option>
+              <option value={5}>5 – AI-Innovation vorantreiben</option>
             </select>
           </div>
         </div>
@@ -2952,15 +2954,15 @@ function TeamEditMode({ teamData, roles, capabilities, saving, teamTypes, initTy
 // ─── AI Selbsteinschätzung ───────────────────────────────────────────────────
 
 const AI_FAEHIGKEITEN_LABELS: Record<number, string> = {
-  1: 'Kaum Wissen', 2: 'Grundverständnis', 3: 'Erste Kompetenzen', 4: 'Gute Kompetenzen', 5: 'Hohe Kompetenzen',
+  1: 'Kaum Wissen', 2: 'Grundverständnis', 3: 'Erste Kompetenzen', 4: 'Gute Kompetenzen', 5: 'Hohe Expertise',
 }
 const AI_ZUGANG_LABELS: Record<number, string> = {
-  1: 'Keine Unterstützung', 2: 'Erste Zugänge', 3: 'Nutzung möglich',
-  4: 'Nutzung in Arbeitsprozess integriert', 5: 'Nutzung in Arbeitsprozess fest verankert',
+  1: 'Keine Unterstützung', 2: 'Testzugang', 3: 'Erste Nutzungen',
+  4: 'Breite Nutzungsmöglichkeiten', 5: 'In Arbeitsprozess fest integriert',
 }
 const AI_MOTIVATION_LABELS: Record<number, string> = {
-  1: 'Geringes Interesse', 2: 'Offen, aber zurückhaltend', 3: 'Probiert aktiv aus',
-  4: 'Regelmässige Nutzung', 5: 'Treibt AI-Innovation voran',
+  1: 'Geringes Interesse', 2: 'Offen, aber zurückhaltend', 3: 'Ausprobieren',
+  4: 'Aktiv nutzen', 5: 'AI-Innovation vorantreiben',
 }
 
 function AIRadarChart({ faehigkeiten, zugang, motivation }: { faehigkeiten: number; zugang: number; motivation: number }) {
