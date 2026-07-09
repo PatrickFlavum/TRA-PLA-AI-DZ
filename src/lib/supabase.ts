@@ -215,7 +215,7 @@ export async function loadEmployeeRoles(): Promise<EmployeeRole[]> {
   const { data, error } = await supabase
     .from('employee_roles')
     .select('*')
-    .order('sort_order')
+    .order('name')
   if (error) throw error
   return (data ?? []) as EmployeeRole[]
 }

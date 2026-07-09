@@ -89,7 +89,18 @@ export default function AODetailPage() {
   }
 
   const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text)
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text)
+    } else {
+      const el = document.createElement('textarea')
+      el.value = text
+      el.style.cssText = 'position:fixed;left:-9999px;top:-9999px'
+      document.body.appendChild(el)
+      el.focus()
+      el.select()
+      document.execCommand('copy')
+      document.body.removeChild(el)
+    }
   }
 
   const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''

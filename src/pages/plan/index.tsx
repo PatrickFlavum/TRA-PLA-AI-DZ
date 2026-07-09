@@ -1606,6 +1606,8 @@ export default function PlanPage() {
                   .map(cap => ({ label: cap.name, value: td.allocations[cap.id] ?? 0, color: cap.color ?? '#6366f1' }))
 
                 const isExpanded = expandedTeamIds.has(td.team.id)
+                const teamComplete = td.members.length > 0 && hasAnyAllocation
+                  && td.team.ai_faehigkeiten != null && td.team.ai_zugang != null && td.team.ai_motivation != null
                 return (
                   <div key={td.team.id} className="bg-white rounded-xl border border-gray-200 p-5 print-no-break">
                     {isEditingThis ? (
@@ -1618,6 +1620,11 @@ export default function PlanPage() {
                       <>
                         <div className="flex items-start justify-between cursor-pointer" onClick={() => toggleTeamExpand(td.team.id)}>
                           <div>
+                            <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${teamComplete ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                                {teamComplete ? 'Erfassung vollständig' : 'Erfassung unvollständig'}
+                              </span>
+                            </div>
                             <div className="flex items-center gap-2 flex-wrap">
                               <h4 className="text-base font-semibold text-gray-900">{td.team.name}</h4>
                             </div>
@@ -2128,7 +2135,7 @@ export default function PlanPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-1.5 mb-1.5 flex-wrap">
                             <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${incomplete ? 'bg-gray-100 text-gray-500' : 'bg-green-50 text-green-700'}`}>
-                              {incomplete ? 'Planung unvollständig' : 'Planung vollständig'}
+                              {incomplete ? 'Erfassung unvollständig' : 'Erfassung vollständig'}
                             </span>
                             {hasDateConflict && (
                               <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium bg-orange-50 text-orange-700">Terminkonflikte</span>
